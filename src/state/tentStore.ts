@@ -11,6 +11,7 @@ import type {
 } from "../types/tent";
 import {
   createDefaultTentDesign,
+  createHoopedPoleSetTemplate,
   createHoopPoleTemplate,
   createHubPoleSetTemplate,
   createId,
@@ -24,8 +25,13 @@ import { reconcileJointMove, subtract, scale, add, calculateDistance } from "../
 import { regenerateRoofPanels } from "../geometry/regenerateFlyFabric";
 import { computeConvexFlyEnvelope } from "../geometry/computeFlyEnvelope";
 import { useHistoryStore } from "./historyStore";
+import { useSelectionStore } from "./selectionStore";
 
 type Dimensions = TentDesign["dimensions"];
+
+/** Duplicates are offset from their source so they don't render exactly on top of it. */
+const DUPLICATE_OFFSET_MM = 300;
+const duplicateOffset: Vector3 = { x: DUPLICATE_OFFSET_MM, y: 0, z: DUPLICATE_OFFSET_MM };
 
 /** Keeps the Length/Width/Ground clearance fields live-accurate to the actual floor corners, so dragging a corner in the 2D view updates the dimension inputs immediately instead of leaving them stale. */
 function syncDimensionsFromCorners(anchors: AnchorPoint[], dimensions: Dimensions): Dimensions {
@@ -86,6 +92,8 @@ type TentState = {
   addAnchor: (type: AnchorType, position: Vector3, name?: string) => void;
   moveAnchor: (anchorId: string, position: Vector3, opts?: { skipHistory?: boolean }) => void;
   removeAnchor: (anchorId: string) => void;
+  /** Clones a stake/tie-out anchor, offset so it doesn't sit exactly on top of the source; selects the copy. Corners/eaves can't be duplicated (same restriction as delete). */
+  duplicateAnchor: (anchorId: string) => void;
 
   /** Tie-outs are two-ended: a fabric attachment (moved via moveAnchor) and a separate ground stake point. */
   addTieOut: (fabricPosition: Vector3, groundPosition: Vector3, name?: string) => void;
@@ -96,6 +104,8 @@ type TentState = {
   addJoint: (type: PoleJointType, position: Vector3, name?: string) => void;
   moveJoint: (jointId: string, position: Vector3, opts?: { skipHistory?: boolean }) => void;
   removeJoint: (jointId: string) => void;
+  /** Clones a lone joint (not attached to any segment), offset from the source; selects the copy. */
+  duplicateJoint: (jointId: string) => void;
   /** Welds `removeJointId` into `keepJointId`: every segment/ridgeline/panel referencing it is rewired, then it's deleted. */
   mergeJoints: (keepJointId: string, removeJointId: string) => void;
   /** Explicitly overrides whether the fly drapes over this joint (see geometry/regenerateFlyFabric.ts). */
@@ -103,6 +113,8 @@ type TentState = {
 
   addSegment: (startJointId: string, endJointId: string, kind: PoleSegmentKind) => void;
   removeSegment: (segmentId: string) => void;
+  /** Clones a whole pole: the segment plus its endpoint (and arc-peak) joints, offset from the source; selects the new segment. */
+  duplicateSegment: (segmentId: string) => void;
   toggleSegmentLockedLength: (segmentId: string) => void;
   setSegmentLength: (segmentId: string, lengthMm: number) => void;
 
@@ -112,6 +124,11 @@ type TentState = {
   addHubPoleSetTemplate: (
     hubA: Vector3,
     hubB: Vector3,
+    legGroundPositions: [Vector3, Vector3, Vector3, Vector3]
+  ) => void;
+  addHoopedPoleSetTemplate: (
+    hubAPeak: Vector3,
+    hubBPeak: Vector3,
     legGroundPositions: [Vector3, Vector3, Vector3, Vector3]
   ) => void;
 
@@ -212,6 +229,27 @@ export const useTentStore = create<TentState>((set, get) => ({
     set({ design });
   },
 
+  duplicateAnchor: (anchorId) => {
+    const source = get().design.anchors.find((a) => a.id === anchorId);
+    if (!source || source.type === "corner" || source.type === "eave") return;
+    const newId = createId("anchor");
+    const design = withHistory(get, (current) => ({
+      ...current,
+      anchors: [
+        ...current.anchors,
+        {
+          ...source,
+          id: newId,
+          name: `${source.name} copy`,
+          position: add(source.position, duplicateOffset),
+          groundPosition: source.groundPosition ? add(source.groundPosition, duplicateOffset) : undefined,
+        },
+      ],
+    }));
+    set({ design });
+    useSelectionStore.getState().select("anchor", newId);
+  },
+
   addTieOut: (fabricPosition, groundPosition, name) => {
     const design = withHistory(get, (current) => {
       const newAnchor: AnchorPoint = {
@@ -290,6 +328,21 @@ export const useTentStore = create<TentState>((set, get) => ({
     set({ design });
   },
 
+  duplicateJoint: (jointId) => {
+    const source = get().design.poleJoints.find((j) => j.id === jointId);
+    if (!source) return;
+    const newId = createId("joint");
+    const design = withHistory(get, (current) => ({
+      ...current,
+      poleJoints: [
+        ...current.poleJoints,
+        { ...source, id: newId, name: `${source.name} copy`, position: add(source.position, duplicateOffset) },
+      ],
+    }));
+    set({ design });
+    useSelectionStore.getState().select("joint", newId);
+  },
+
   mergeJoints: (keepJointId, removeJointId) => {
     const design = withHistory(get, (current) => {
       if (keepJointId === removeJointId) return current;
@@ -352,6 +405,52 @@ export const useTentStore = create<TentState>((set, get) => ({
       poleSegments: current.poleSegments.filter((s) => s.id !== segmentId),
     }));
     set({ design });
+  },
+
+  duplicateSegment: (segmentId) => {
+    const { poleSegments, poleJoints } = get().design;
+    const source = poleSegments.find((s) => s.id === segmentId);
+    if (!source) return;
+    const jointLookup = new Map(poleJoints.map((j) => [j.id, j]));
+    const startJoint = jointLookup.get(source.startJointId);
+    const endJoint = jointLookup.get(source.endJointId);
+    const archJoint = source.archJointId ? jointLookup.get(source.archJointId) : undefined;
+    if (!startJoint || !endJoint) return;
+
+    const newStartId = createId("joint");
+    const newEndId = createId("joint");
+    const newArchId = archJoint ? createId("joint") : undefined;
+    const newSegmentId = createId("segment");
+
+    const design = withHistory(get, (current) => {
+      const newJoints: PoleJoint[] = [
+        { ...startJoint, id: newStartId, name: `${startJoint.name} copy`, position: add(startJoint.position, duplicateOffset) },
+        { ...endJoint, id: newEndId, name: `${endJoint.name} copy`, position: add(endJoint.position, duplicateOffset) },
+      ];
+      if (archJoint && newArchId) {
+        newJoints.push({
+          ...archJoint,
+          id: newArchId,
+          name: `${archJoint.name} copy`,
+          position: add(archJoint.position, duplicateOffset),
+        });
+      }
+      const newSegment = {
+        ...source,
+        id: newSegmentId,
+        name: `${source.name} copy`,
+        startJointId: newStartId,
+        endJointId: newEndId,
+        archJointId: newArchId,
+      };
+      return {
+        ...current,
+        poleJoints: [...current.poleJoints, ...newJoints],
+        poleSegments: [...current.poleSegments, newSegment],
+      };
+    });
+    set({ design });
+    useSelectionStore.getState().select("segment", newSegmentId);
   },
 
   toggleSegmentLockedLength: (segmentId) => {
@@ -424,6 +523,18 @@ export const useTentStore = create<TentState>((set, get) => ({
   addHubPoleSetTemplate: (hubA, hubB, legGroundPositions) => {
     const design = withHistory(get, (current) => {
       const { joints, segments } = createHubPoleSetTemplate(hubA, hubB, legGroundPositions);
+      return {
+        ...current,
+        poleJoints: [...current.poleJoints, ...joints],
+        poleSegments: [...current.poleSegments, ...segments],
+      };
+    });
+    set({ design });
+  },
+
+  addHoopedPoleSetTemplate: (hubAPeak, hubBPeak, legGroundPositions) => {
+    const design = withHistory(get, (current) => {
+      const { joints, segments } = createHoopedPoleSetTemplate(hubAPeak, hubBPeak, legGroundPositions);
       return {
         ...current,
         poleJoints: [...current.poleJoints, ...joints],

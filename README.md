@@ -189,6 +189,51 @@ assumptions (6061-T6 aluminium, ~2.70 g/cm³; 0.9mm wall; 9mm diameter where
 a pole's own `diameter` isn't set) rather than a precise per-pole spec —
 called out directly in the UI so it doesn't read as more precise than it is.
 
+## Fly fabric weight and total tent weight
+
+The Weights group (right sidebar) adds a fly fabric estimate alongside the
+pole weights: `geometry/fabricWeight.ts` sums the true 3D triangle area of
+every current fly panel (via the same triangulation used for rendering, not
+the flattened cut-pattern approximation, so a hoop-affected curved panel's
+area isn't distorted by unrolling it flat) and multiplies by a representative
+areal density for whichever fabric is toggled — DCF (~34 g/m², a common
+mid-weight tent-fly grade) or SilNylon 20D (~40 g/m², a typical double-sided
+silicone-coated nylon). Neither is tracked per-panel, so — like the pole
+weight estimate — this is one labeled assumption per fabric rather than a
+per-panel material spec. A "Total tent weight" line sums every pole's
+estimated weight plus the selected fabric weight, all under the same g/oz
+toggle.
+
+## Keyboard shortcuts
+
+With something selected (in either view or the component list): **Delete**
+or **Backspace** removes it, **Shift+D** duplicates it (offset 300mm so the
+copy doesn't render exactly on top of the original, and the new copy becomes
+the selection). Both respect the same restriction as the manual delete
+button — corners and eaves are structural and can't be removed or
+duplicated this way. Duplicating a pole segment clones its whole pole (both
+endpoint joints, plus the arc-peak joint for a hoop) as a new, independent
+pole rather than just the segment. Keys are ignored while focus is in a text
+input so typing dimensions doesn't accidentally delete your selection
+(`components/layout/KeyboardShortcuts.tsx`).
+
+## Save / load
+
+"Save design" (Dimensions panel) downloads the current `TentDesign` as a
+`.json` file; "Load design" opens a file picker, does a light structural
+check (the expected top-level arrays/objects are present — not a full schema
+validation), and replaces the current design via `loadDesign`, clearing undo
+history the same way starting a fresh default tent does.
+
+## Pole template groups
+
+`ObjectProperties`'s add-buttons are grouped by pole shape rather than listed
+flat: **Straight poles** (straight pole, spreader pole, straight hubbed pole
+set), **Hoop poles** (hoop pole, hooped pole set — two hoops whose peaks
+double as hub joints, joined by a spreader across the top, mirroring the
+straight hubbed set's shape but with each pair of straight legs replaced by
+one arced hoop), and **Hubs & anchors** (a lone hub, stake, tie-out).
+
 ## Fly cut pattern
 
 The "View cut pattern" button (View panel) flattens every current fly

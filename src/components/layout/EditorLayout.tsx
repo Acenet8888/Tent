@@ -8,6 +8,7 @@ import { ObjectProperties } from "../panels/ObjectProperties";
 import { ViewControls } from "../panels/ViewControls";
 import { ComponentList } from "../panels/ComponentList";
 import { CutPatternModal } from "../panels/CutPatternModal";
+import { KeyboardShortcuts } from "./KeyboardShortcuts";
 
 export function EditorLayout() {
   const design = useTentStore((s) => s.design);
@@ -54,6 +55,7 @@ export function EditorLayout() {
       </div>
 
       <CutPatternModal />
+      <KeyboardShortcuts />
     </div>
   );
 }

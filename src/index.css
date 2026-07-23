@@ -397,6 +397,18 @@ label {
   line-height: 1.4;
 }
 
+.weights-total {
+  margin: 4px 0;
+  font-size: 11px;
+}
+
+.weights-grand-total {
+  font-weight: 600;
+  color: var(--text-h);
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;

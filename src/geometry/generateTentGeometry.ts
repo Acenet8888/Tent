@@ -336,3 +336,49 @@ export function createHubPoleSetTemplate(
     segments: [spreader, ...legs],
   };
 }
+
+/**
+ * A hooped pole set: two hoop poles whose peaks double as hub joints,
+ * joined by a spreader across the top — a two-hoop dome frame with a ridge
+ * strut, mirroring createHubPoleSetTemplate's (hubA, hubB, 4 leg grounds)
+ * shape but with each pair of legs replaced by a single arced hoop.
+ */
+export function createHoopedPoleSetTemplate(
+  hubAPeakPosition: Vector3,
+  hubBPeakPosition: Vector3,
+  legGroundPositions: [Vector3, Vector3, Vector3, Vector3]
+): PoleTemplateResult {
+  const hubA = makeJoint("Hub A", "hub", hubAPeakPosition);
+  const hubB = makeJoint("Hub B", "hub", hubBPeakPosition);
+  const legJoints = legGroundPositions.map((pos, i) => makeJoint(`Hoop Leg ${i + 1}`, "ground", pos));
+
+  const spreader = makeStraightSegment("Hub Spreader", "spreader-pole", hubA, hubB);
+
+  const makeHoopLeg = (name: string, hub: PoleJoint, groundA: PoleJoint, groundB: PoleJoint): PoleSegment => ({
+    id: createId("segment"),
+    name,
+    kind: "hoop-pole",
+    shape: "arc",
+    startJointId: groundA.id,
+    endJointId: groundB.id,
+    archJointId: hub.id,
+    length:
+      currentSegmentLength(
+        { startJointId: groundA.id, endJointId: groundB.id, archJointId: hub.id, shape: "arc" } as PoleSegment,
+        new Map([
+          [groundA.id, groundA.position],
+          [groundB.id, groundB.position],
+          [hub.id, hub.position],
+        ])
+      ) ?? calculateDistance(groundA.position, groundB.position),
+    lockedLength: false,
+  });
+
+  const hoopA = makeHoopLeg("Hoop A", hubA, legJoints[0], legJoints[1]);
+  const hoopB = makeHoopLeg("Hoop B", hubB, legJoints[2], legJoints[3]);
+
+  return {
+    joints: [hubA, hubB, ...legJoints],
+    segments: [spreader, hoopA, hoopB],
+  };
+}

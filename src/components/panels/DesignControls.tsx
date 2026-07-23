@@ -1,7 +1,22 @@
+import { useRef } from "react";
 import { useTentStore } from "../../state/tentStore";
 import { useHistoryStore } from "../../state/historyStore";
 import { ALL_UNITS, UNIT_LABELS, fromMillimeters } from "../../units/conversions";
-import type { LengthUnit } from "../../types/tent";
+import type { LengthUnit, TentDesign } from "../../types/tent";
+
+/** Loose structural check — enough to catch "wrong file" without re-deriving a full schema validator. */
+function looksLikeTentDesign(value: unknown): value is TentDesign {
+  if (!value || typeof value !== "object") return false;
+  const d = value as Record<string, unknown>;
+  return (
+    Array.isArray(d.anchors) &&
+    Array.isArray(d.poleJoints) &&
+    Array.isArray(d.poleSegments) &&
+    Array.isArray(d.fabricPanels) &&
+    typeof d.dimensions === "object" &&
+    d.dimensions !== null
+  );
+}
 
 function DimensionField({
   label,
@@ -33,17 +48,48 @@ function DimensionField({
 }
 
 export function DesignControls() {
-  const dimensions = useTentStore((s) => s.design.dimensions);
+  const design = useTentStore((s) => s.design);
+  const dimensions = design.dimensions;
   const setDimensions = useTentStore((s) => s.setDimensions);
   const setDisplayUnit = useTentStore((s) => s.setDisplayUnit);
   const resetToDefault = useTentStore((s) => s.resetToDefault);
+  const loadDesign = useTentStore((s) => s.loadDesign);
   const undo = useTentStore((s) => s.undo);
   const redo = useTentStore((s) => s.redo);
   const canUndo = useHistoryStore((s) => s.past.length > 0);
   const canRedo = useHistoryStore((s) => s.future.length > 0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const unit = dimensions.unit;
   const hasWalls = dimensions.wallHeight !== undefined && dimensions.wallHeight > 0;
+
+  function handleSave() {
+    const blob = new Blob([JSON.stringify(design, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "tent-design.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleLoadFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    file
+      .text()
+      .then((text) => {
+        const parsed = JSON.parse(text);
+        if (!looksLikeTentDesign(parsed)) {
+          window.alert("That file doesn't look like a tent design (missing expected fields).");
+          return;
+        }
+        useHistoryStore.getState().clear();
+        loadDesign(parsed);
+      })
+      .catch(() => window.alert("Couldn't read that file as a tent design (invalid JSON)."));
+  }
 
   return (
     <div className="design-controls">
@@ -121,6 +167,20 @@ export function DesignControls() {
           Redo
         </button>
       </div>
+
+      <h3>Save / load</h3>
+      <div className="add-buttons">
+        <button onClick={handleSave}>Save design</button>
+        <button onClick={() => fileInputRef.current?.click()}>Load design</button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,application/json"
+          style={{ display: "none" }}
+          onChange={handleLoadFile}
+        />
+      </div>
+      <p className="hint">Save downloads the current design as a .json file; Load replaces the current design and clears undo history.</p>
     </div>
   );
 }

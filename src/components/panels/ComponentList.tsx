@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTentStore } from "../../state/tentStore";
 import { useSelectionStore, type SelectionKind } from "../../state/selectionStore";
-import type { AnchorPoint, AnchorType, LengthUnit, PoleJoint, PoleJointType, PoleSegment } from "../../types/tent";
+import type { AnchorPoint, AnchorType, LengthUnit, PoleJoint, PoleJointType, PoleSegment, TentDesign } from "../../types/tent";
 import { formatLength } from "../../units/conversions";
 import {
   DEFAULT_POLE_DIAMETER_MM,
@@ -10,6 +10,13 @@ import {
   formatWeight,
   type WeightUnit,
 } from "../../geometry/poleWeight";
+import {
+  FABRIC_DENSITY_G_PER_M2,
+  FABRIC_LABELS,
+  computeFlyAreaMm2,
+  estimateFlyWeightGrams,
+  type FabricType,
+} from "../../geometry/fabricWeight";
 
 const ANCHOR_COLORS: Record<AnchorType, string> = {
   corner: "#3b6ef0",
@@ -116,30 +123,21 @@ function JointGroup({ type, joints }: { type: PoleJointType; joints: PoleJoint[]
   );
 }
 
-function SegmentGroup({ segments, lengthUnit }: { segments: PoleSegment[]; lengthUnit: LengthUnit }) {
-  const [weightUnit, setWeightUnit] = useState<WeightUnit>("g");
+function SegmentGroup({
+  segments,
+  lengthUnit,
+  weightUnit,
+}: {
+  segments: PoleSegment[];
+  lengthUnit: LengthUnit;
+  weightUnit: WeightUnit;
+}) {
   if (segments.length === 0) return null;
 
   return (
     <div className="component-group">
       <h4>
-        <span>
-          Poles <span className="component-count">{segments.length}</span>
-        </span>
-        <span className="weight-unit-toggle">
-          <button
-            className={weightUnit === "g" ? "unit-active" : ""}
-            onClick={() => setWeightUnit("g")}
-          >
-            g
-          </button>
-          <button
-            className={weightUnit === "oz" ? "unit-active" : ""}
-            onClick={() => setWeightUnit("oz")}
-          >
-            oz
-          </button>
-        </span>
+        Poles <span className="component-count">{segments.length}</span>
       </h4>
       {segments.map((s) => (
         <Row
@@ -152,10 +150,65 @@ function SegmentGroup({ segments, lengthUnit }: { segments: PoleSegment[]; lengt
           id={s.id}
         />
       ))}
+    </div>
+  );
+}
+
+const FABRIC_TYPES: FabricType[] = ["dcf", "silnylon-20d"];
+
+function WeightsSection({ design }: { design: TentDesign }) {
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>("g");
+  const [fabricType, setFabricType] = useState<FabricType>("dcf");
+
+  const poleWeightGrams = design.poleSegments.reduce((sum, s) => sum + estimatePoleWeightGrams(s), 0);
+  const flyAreaMm2 = useMemo(() => computeFlyAreaMm2(design), [design]);
+  const flyAreaM2 = flyAreaMm2 / 1_000_000;
+  const flyWeightGrams = estimateFlyWeightGrams(flyAreaMm2, fabricType);
+  const totalWeightGrams = poleWeightGrams + flyWeightGrams;
+
+  if (design.poleSegments.length === 0 && flyAreaMm2 === 0) return null;
+
+  return (
+    <div className="component-group">
+      <h4>
+        <span>Weights</span>
+        <span className="weight-unit-toggle">
+          {(["g", "oz"] as WeightUnit[]).map((u) => (
+            <button key={u} className={weightUnit === u ? "unit-active" : ""} onClick={() => setWeightUnit(u)}>
+              {u}
+            </button>
+          ))}
+        </span>
+      </h4>
+
+      <SegmentGroup segments={design.poleSegments} lengthUnit={design.dimensions.unit} weightUnit={weightUnit} />
+
+      <div className="component-group">
+        <h4>
+          <span>Fly fabric</span>
+          <span className="weight-unit-toggle">
+            {FABRIC_TYPES.map((f) => (
+              <button key={f} className={fabricType === f ? "unit-active" : ""} onClick={() => setFabricType(f)}>
+                {FABRIC_LABELS[f]}
+              </button>
+            ))}
+          </span>
+        </h4>
+        <p className="hint weights-total">
+          {flyAreaM2.toFixed(2)} m² · {formatWeight(flyWeightGrams, weightUnit)} (
+          {FABRIC_DENSITY_G_PER_M2[fabricType]} g/m² {FABRIC_LABELS[fabricType]})
+        </p>
+      </div>
+
+      <p className="hint weights-total weights-grand-total">
+        Total tent weight: {formatWeight(totalWeightGrams, weightUnit)}
+      </p>
+
       <p className="hint pole-weight-hint">
-        Weight assumes hollow 6061-T6 aluminium tubing, {DEFAULT_POLE_WALL_THICKNESS_MM}mm wall,{" "}
-        {DEFAULT_POLE_DIAMETER_MM}mm diameter where a pole's own diameter isn't set — a labeled
-        estimate, not a spec.
+        Pole weight assumes hollow 6061-T6 aluminium tubing, {DEFAULT_POLE_WALL_THICKNESS_MM}mm
+        wall, {DEFAULT_POLE_DIAMETER_MM}mm diameter where a pole's own diameter isn't set. Fabric
+        weight uses a single representative areal density per type (see geometry/fabricWeight.ts)
+        rather than a per-panel material spec. Both are labeled estimates, not a bill of materials.
       </p>
     </div>
   );
@@ -176,7 +229,7 @@ export function ComponentList() {
       {JOINT_TYPES.map((type) => (
         <JointGroup key={type} type={type} joints={design.poleJoints.filter((j) => j.type === type)} />
       ))}
-      <SegmentGroup segments={design.poleSegments} lengthUnit={design.dimensions.unit} />
+      <WeightsSection design={design} />
     </div>
   );
 }

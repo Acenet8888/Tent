@@ -62,6 +62,7 @@ export function ObjectProperties() {
   const addSpreaderPoleTemplate = useTentStore((s) => s.addSpreaderPoleTemplate);
   const addHoopPoleTemplate = useTentStore((s) => s.addHoopPoleTemplate);
   const addHubPoleSetTemplate = useTentStore((s) => s.addHubPoleSetTemplate);
+  const addHoopedPoleSetTemplate = useTentStore((s) => s.addHoopedPoleSetTemplate);
 
   const selection = useSelectionStore((s) => s.selection);
   const clearSelection = useSelectionStore((s) => s.clear);
@@ -105,22 +106,36 @@ export function ObjectProperties() {
   const addLoneHub = () => {
     addJoint("hub", { x: 0, y: peakHeight * 0.5, z: 0 });
   };
+  const addHoopedPoleSet = () => {
+    const hubHeight = peakHeight * 0.7;
+    addHoopedPoleSetTemplate({ x: -halfLength / 2, y: hubHeight, z: 0 }, { x: halfLength / 2, y: hubHeight, z: 0 }, [
+      { x: -halfLength / 2, y: 0, z: -halfWidth / 2 },
+      { x: -halfLength / 2, y: 0, z: halfWidth / 2 },
+      { x: halfLength / 2, y: 0, z: -halfWidth / 2 },
+      { x: halfLength / 2, y: 0, z: halfWidth / 2 },
+    ]);
+  };
 
   return (
     <div className="object-properties">
-      <h3>Anchors</h3>
-      <div className="add-buttons">
-        <button onClick={addStake}>+ Stake</button>
-        <button onClick={addTieOut}>+ Tie-out</button>
-      </div>
-
-      <h3>Pole system</h3>
+      <h3>Straight poles</h3>
       <div className="add-buttons">
         <button onClick={addStraightPole}>+ Straight pole</button>
         <button onClick={addSpreaderPole}>+ Spreader pole</button>
+        <button onClick={addHubPoleSet}>+ Straight hubbed pole set</button>
+      </div>
+
+      <h3>Hoop poles</h3>
+      <div className="add-buttons">
         <button onClick={addHoopPole}>+ Hoop pole</button>
-        <button onClick={addHubPoleSet}>+ Hub pole set</button>
+        <button onClick={addHoopedPoleSet}>+ Hooped pole set</button>
+      </div>
+
+      <h3>Hubs &amp; anchors</h3>
+      <div className="add-buttons">
         <button onClick={addLoneHub}>+ Hub</button>
+        <button onClick={addStake}>+ Stake</button>
+        <button onClick={addTieOut}>+ Tie-out</button>
       </div>
       <p className="hint">
         Templates drop in ready-made pieces you can drag into place. A spreader's ends are
