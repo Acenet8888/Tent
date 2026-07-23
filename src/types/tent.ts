@@ -52,6 +52,15 @@ export type PoleJoint = {
   name: string;
   type: PoleJointType;
   position: Vector3;
+
+  /**
+   * Whether the fly (roof fabric) drapes over this joint. Left unset, it
+   * defaults to true for "apex" joints and false for "ground"/"hub" — but
+   * the user can override either way: turn it on for a hub that should
+   * support the fabric from inside, or off for an apex that shouldn't kink
+   * the roofline. See geometry/regenerateFlyFabric.ts.
+   */
+  flyAttachment?: boolean;
 };
 
 export type PoleSegmentShape = "straight" | "arc";
@@ -109,6 +118,15 @@ export type AnchorPoint = {
    * the ground where its guy-line stakes down.
    */
   groundPosition?: Vector3;
+
+  /**
+   * Whether the fly pegs out to this anchor. Left unset, it defaults to
+   * true for "corner"/"eave" (they're structurally required) and false for
+   * "stake"/"tie-out" — turn it on to extend the fly's boundary out to an
+   * extra peg point (a bigger porch/awning overhang). See
+   * geometry/regenerateFlyFabric.ts.
+   */
+  flyAttachment?: boolean;
 };
 
 export type Ridgeline = {

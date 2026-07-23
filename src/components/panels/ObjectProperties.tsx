@@ -2,6 +2,7 @@ import { useTentStore } from "../../state/tentStore";
 import { useSelectionStore } from "../../state/selectionStore";
 import { usePoleBuilderStore } from "../../state/poleBuilderStore";
 import { fromMillimeters, toMillimeters } from "../../units/conversions";
+import { isFlyAttachedAnchor, isFlyAttachedJoint } from "../../geometry/regenerateFlyFabric";
 import type { PoleSegmentKind, Vector3 } from "../../types/tent";
 
 function Coord({
@@ -47,9 +48,11 @@ export function ObjectProperties() {
   const addAnchor = useTentStore((s) => s.addAnchor);
   const addTieOutAction = useTentStore((s) => s.addTieOut);
   const moveTieOutGround = useTentStore((s) => s.moveTieOutGround);
+  const setAnchorFlyAttachment = useTentStore((s) => s.setAnchorFlyAttachment);
   const moveJoint = useTentStore((s) => s.moveJoint);
   const removeJoint = useTentStore((s) => s.removeJoint);
   const mergeJoints = useTentStore((s) => s.mergeJoints);
+  const setJointFlyAttachment = useTentStore((s) => s.setJointFlyAttachment);
   const addJoint = useTentStore((s) => s.addJoint);
   const addSegment = useTentStore((s) => s.addSegment);
   const removeSegment = useTentStore((s) => s.removeSegment);
@@ -124,6 +127,9 @@ export function ObjectProperties() {
         hubs, so you can weld either one onto an existing hub: select the spreader's end,
         click "Start connection here" below, then select the hub to attach it to. To join two
         joints with a new strut instead (not merge them), pick a pole kind in that same form.
+        Select any joint or stake to see "Fly pegs out / drapes over here" — that's what
+        controls where the fly fabric actually connects to the frame and pegs, independent of
+        what the point is used for structurally.
       </p>
 
       {!selection && <p className="hint">Select a point in either view to edit it here.</p>}
@@ -155,15 +161,25 @@ export function ObjectProperties() {
               )}
 
               {(anchor.type === "stake" || anchor.type === "tie-out") && (
-                <button
-                  className="danger"
-                  onClick={() => {
-                    removeAnchor(anchor.id);
-                    clearSelection();
-                  }}
-                >
-                  Delete point
-                </button>
+                <>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={isFlyAttachedAnchor(anchor)}
+                      onChange={(e) => setAnchorFlyAttachment(anchor.id, e.target.checked)}
+                    />
+                    Fly pegs out here
+                  </label>
+                  <button
+                    className="danger"
+                    onClick={() => {
+                      removeAnchor(anchor.id);
+                      clearSelection();
+                    }}
+                  >
+                    Delete point
+                  </button>
+                </>
               )}
             </div>
           );
@@ -183,6 +199,15 @@ export function ObjectProperties() {
               <Coord label="X" valueMm={joint.position.x} unit={unit} onCommit={(v) => commit({ x: v })} />
               <Coord label="Y" valueMm={joint.position.y} unit={unit} onCommit={(v) => commit({ y: v })} />
               <Coord label="Z" valueMm={joint.position.z} unit={unit} onCommit={(v) => commit({ z: v })} />
+
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isFlyAttachedJoint(joint)}
+                  onChange={(e) => setJointFlyAttachment(joint.id, e.target.checked)}
+                />
+                Fly drapes over here
+              </label>
 
               <div className="connect-controls">
                 {!pendingJointId && (

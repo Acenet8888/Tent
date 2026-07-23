@@ -80,19 +80,33 @@ each splitting into two legs) plus two ways to join joints by hand:
 welds them into a single point — how you'd weld a spreader's end onto an
 existing hub, since a spreader's own ends are hubs (`tentStore.mergeJoints`).
 
-## Fly fabric follows the poles
+## Fly fabric follows the poles — explicitly, not automatically
 
 The roof (fly) panels aren't fixed to the two original ridge ends — they're
 recomputed after every edit (`geometry/regenerateFlyFabric.ts`, run from
-`tentStore`'s shared `withHistory` wrapper) from whichever "apex" joints
-currently exist, sorted by x. The front/back slopes become a fan from the
-front/back base line (the eave line if the tent has walls, otherwise the
-floor corners) across every apex point, so adding a straight pole or a hoop
+`tentStore`'s shared `withHistory` wrapper) from whichever points are
+currently flagged as fly attachments, sorted by x. The front/back slopes
+become a fan from the front/back base line (the eave line if the tent has
+walls, otherwise the floor corners, plus any stake/tie-out explicitly opted
+in) across every attached joint, so adding a straight pole or a hoop
 mid-tent bends the roofline through its peak instead of leaving it floating
-under a flat, unchanged fly. Hub joints are treated as interior supports and
-never affect the roofline — only "apex" joints do. Floor and wall panels
-stay fixed to the corner/eave anchors, since they don't depend on how many
-poles exist.
+under a flat, unchanged fly.
+
+Which points count is an explicit flag (`PoleJoint.flyAttachment` /
+`AnchorPoint.flyAttachment`, surfaced as a checkbox on the selected
+joint/stake in ObjectProperties), not an automatic "wrap whatever sticks
+out" solver — working out which points are on the outside for an arbitrary
+3D pole arrangement is a hard problem in general, so instead: apex joints
+default to attached and hub/ground joints default to not, but either can be
+overridden per-joint (e.g. opt a hub into the roofline so the fly rests on
+top of it), and a stake/tie-out can opt in to pull the fly's edge out to an
+extra peg point. Floor and wall panels stay fixed to the corner/eave
+anchors regardless, since they don't depend on how many poles exist.
+
+One topology detail worth knowing if you touch this code: both slopes trace
+their own base line ascending by x and the ridge *descending* by x — tracing
+the ridge in the same direction as the base line produces a self-intersecting
+bowtie quad instead of a simple trapezoid.
 
 ## Two-ended tie-outs
 

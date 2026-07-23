@@ -89,12 +89,16 @@ type TentState = {
   /** Tie-outs are two-ended: a fabric attachment (moved via moveAnchor) and a separate ground stake point. */
   addTieOut: (fabricPosition: Vector3, groundPosition: Vector3, name?: string) => void;
   moveTieOutGround: (anchorId: string, position: Vector3, opts?: { skipHistory?: boolean }) => void;
+  /** Explicitly overrides whether the fly pegs out to this anchor (see geometry/regenerateFlyFabric.ts). */
+  setAnchorFlyAttachment: (anchorId: string, value: boolean) => void;
 
   addJoint: (type: PoleJointType, position: Vector3, name?: string) => void;
   moveJoint: (jointId: string, position: Vector3, opts?: { skipHistory?: boolean }) => void;
   removeJoint: (jointId: string) => void;
   /** Welds `removeJointId` into `keepJointId`: every segment/ridgeline/panel referencing it is rewired, then it's deleted. */
   mergeJoints: (keepJointId: string, removeJointId: string) => void;
+  /** Explicitly overrides whether the fly drapes over this joint (see geometry/regenerateFlyFabric.ts). */
+  setJointFlyAttachment: (jointId: string, value: boolean) => void;
 
   addSegment: (startJointId: string, endJointId: string, kind: PoleSegmentKind) => void;
   removeSegment: (segmentId: string) => void;
@@ -222,6 +226,14 @@ export const useTentStore = create<TentState>((set, get) => ({
     set({ design });
   },
 
+  setAnchorFlyAttachment: (anchorId, value) => {
+    const design = withHistory(get, (current) => ({
+      ...current,
+      anchors: current.anchors.map((a) => (a.id === anchorId ? { ...a, flyAttachment: value } : a)),
+    }));
+    set({ design });
+  },
+
   addJoint: (type, position, name) => {
     const design = withHistory(get, (current) => {
       const newJoint: PoleJoint = {
@@ -289,6 +301,14 @@ export const useTentStore = create<TentState>((set, get) => ({
         })),
       };
     });
+    set({ design });
+  },
+
+  setJointFlyAttachment: (jointId, value) => {
+    const design = withHistory(get, (current) => ({
+      ...current,
+      poleJoints: current.poleJoints.map((j) => (j.id === jointId ? { ...j, flyAttachment: value } : j)),
+    }));
     set({ design });
   },
 
