@@ -140,7 +140,12 @@ narrower, well-posed version of the problem on demand:
 joint, then keeps only the hull's upward-facing faces as fly panels
 (`hull-fly-*` ids) — the fly ends up draped over the true outermost
 envelope of whatever poles currently exist, no per-point flags needed, and
-it naturally drops interior points that don't reach the envelope.
+it naturally drops interior points that don't reach the envelope. A hoop's
+peak contributes its whole sampled curve to the hull's input points, not
+just that one joint (`hullPointsForSupportJoint`) — otherwise the hull
+would see only a single point there and cut a straight chord across the
+hoop's bend instead of bulging out to follow it, the same failure mode the
+incremental sweep had before it learned to splice in arc samples.
 
 The tradeoff: a convex hull can't represent a concave roofline (a valley
 between two peaks always gets pulled taut), and it's a one-shot recompute,
