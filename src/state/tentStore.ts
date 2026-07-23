@@ -14,12 +14,14 @@ import {
   createHoopPoleTemplate,
   createHubPoleSetTemplate,
   createId,
+  createSpreaderPoleTemplate,
   createStraightPoleTemplate,
   generateDefaultTentDesign,
   rescaleTentDesign,
   type TentDimensionsInput,
 } from "../geometry/generateTentGeometry";
 import { reconcileJointMove, subtract, scale, add, calculateDistance } from "../geometry/measurements";
+import { regenerateRoofPanels } from "../geometry/regenerateFlyFabric";
 import { useHistoryStore } from "./historyStore";
 
 type Dimensions = TentDesign["dimensions"];
@@ -84,9 +86,15 @@ type TentState = {
   moveAnchor: (anchorId: string, position: Vector3, opts?: { skipHistory?: boolean }) => void;
   removeAnchor: (anchorId: string) => void;
 
+  /** Tie-outs are two-ended: a fabric attachment (moved via moveAnchor) and a separate ground stake point. */
+  addTieOut: (fabricPosition: Vector3, groundPosition: Vector3, name?: string) => void;
+  moveTieOutGround: (anchorId: string, position: Vector3, opts?: { skipHistory?: boolean }) => void;
+
   addJoint: (type: PoleJointType, position: Vector3, name?: string) => void;
   moveJoint: (jointId: string, position: Vector3, opts?: { skipHistory?: boolean }) => void;
   removeJoint: (jointId: string) => void;
+  /** Welds `removeJointId` into `keepJointId`: every segment/ridgeline/panel referencing it is rewired, then it's deleted. */
+  mergeJoints: (keepJointId: string, removeJointId: string) => void;
 
   addSegment: (startJointId: string, endJointId: string, kind: PoleSegmentKind) => void;
   removeSegment: (segmentId: string) => void;
@@ -94,6 +102,7 @@ type TentState = {
   setSegmentLength: (segmentId: string, lengthMm: number) => void;
 
   addStraightPoleTemplate: (groundPosition: Vector3, apexPosition: Vector3, kind?: PoleSegmentKind) => void;
+  addSpreaderPoleTemplate: (hubAPosition: Vector3, hubBPosition: Vector3) => void;
   addHoopPoleTemplate: (groundA: Vector3, apex: Vector3, groundB: Vector3) => void;
   addHubPoleSetTemplate: (
     hubA: Vector3,
@@ -114,7 +123,10 @@ function withHistory(
 ) {
   const current = get().design;
   if (!skipHistory) useHistoryStore.getState().record(current);
-  return mutate(current);
+  // Every mutation re-drapes the fly over whatever apex joints currently
+  // exist, so the roof never goes stale relative to a pole you just added,
+  // moved, or removed.
+  return regenerateRoofPanels(mutate(current));
 }
 
 export const useTentStore = create<TentState>((set, get) => ({
@@ -183,6 +195,33 @@ export const useTentStore = create<TentState>((set, get) => ({
     set({ design });
   },
 
+  addTieOut: (fabricPosition, groundPosition, name) => {
+    const design = withHistory(get, (current) => {
+      const newAnchor: AnchorPoint = {
+        id: createId("anchor"),
+        name: name ?? `Tie-out ${current.anchors.filter((a) => a.type === "tie-out").length + 1}`,
+        type: "tie-out",
+        position: fabricPosition,
+        groundPosition,
+        locked: false,
+      };
+      return { ...current, anchors: [...current.anchors, newAnchor] };
+    });
+    set({ design });
+  },
+
+  moveTieOutGround: (anchorId, position, opts) => {
+    const design = withHistory(
+      get,
+      (current) => ({
+        ...current,
+        anchors: current.anchors.map((a) => (a.id === anchorId ? { ...a, groundPosition: position } : a)),
+      }),
+      opts?.skipHistory
+    );
+    set({ design });
+  },
+
   addJoint: (type, position, name) => {
     const design = withHistory(get, (current) => {
       const newJoint: PoleJoint = {
@@ -223,6 +262,33 @@ export const useTentStore = create<TentState>((set, get) => ({
       ),
       fabricPanels: current.fabricPanels.filter((panel) => !panel.boundaryPointIds.includes(jointId)),
     }));
+    set({ design });
+  },
+
+  mergeJoints: (keepJointId, removeJointId) => {
+    const design = withHistory(get, (current) => {
+      if (keepJointId === removeJointId) return current;
+      const remap = (id: string) => (id === removeJointId ? keepJointId : id);
+      return {
+        ...current,
+        poleJoints: current.poleJoints.filter((j) => j.id !== removeJointId),
+        poleSegments: current.poleSegments.map((s) => ({
+          ...s,
+          startJointId: remap(s.startJointId),
+          endJointId: remap(s.endJointId),
+          archJointId: s.archJointId ? remap(s.archJointId) : s.archJointId,
+        })),
+        ridgelines: current.ridgelines.map((r) => ({
+          ...r,
+          startPointId: remap(r.startPointId),
+          endPointId: remap(r.endPointId),
+        })),
+        fabricPanels: current.fabricPanels.map((p) => ({
+          ...p,
+          boundaryPointIds: p.boundaryPointIds.map(remap),
+        })),
+      };
+    });
     set({ design });
   },
 
@@ -289,6 +355,18 @@ export const useTentStore = create<TentState>((set, get) => ({
   addStraightPoleTemplate: (groundPosition, apexPosition, kind = "straight-pole") => {
     const design = withHistory(get, (current) => {
       const { joints, segments } = createStraightPoleTemplate(groundPosition, apexPosition, kind);
+      return {
+        ...current,
+        poleJoints: [...current.poleJoints, ...joints],
+        poleSegments: [...current.poleSegments, ...segments],
+      };
+    });
+    set({ design });
+  },
+
+  addSpreaderPoleTemplate: (hubAPosition, hubBPosition) => {
+    const design = withHistory(get, (current) => {
+      const { joints, segments } = createSpreaderPoleTemplate(hubAPosition, hubBPosition);
       return {
         ...current,
         poleJoints: [...current.poleJoints, ...joints],

@@ -45,14 +45,18 @@ export function ObjectProperties() {
   const moveAnchor = useTentStore((s) => s.moveAnchor);
   const removeAnchor = useTentStore((s) => s.removeAnchor);
   const addAnchor = useTentStore((s) => s.addAnchor);
+  const addTieOutAction = useTentStore((s) => s.addTieOut);
+  const moveTieOutGround = useTentStore((s) => s.moveTieOutGround);
   const moveJoint = useTentStore((s) => s.moveJoint);
   const removeJoint = useTentStore((s) => s.removeJoint);
+  const mergeJoints = useTentStore((s) => s.mergeJoints);
   const addJoint = useTentStore((s) => s.addJoint);
   const addSegment = useTentStore((s) => s.addSegment);
   const removeSegment = useTentStore((s) => s.removeSegment);
   const toggleSegmentLockedLength = useTentStore((s) => s.toggleSegmentLockedLength);
   const setSegmentLength = useTentStore((s) => s.setSegmentLength);
   const addStraightPoleTemplate = useTentStore((s) => s.addStraightPoleTemplate);
+  const addSpreaderPoleTemplate = useTentStore((s) => s.addSpreaderPoleTemplate);
   const addHoopPoleTemplate = useTentStore((s) => s.addHoopPoleTemplate);
   const addHubPoleSetTemplate = useTentStore((s) => s.addHubPoleSetTemplate);
 
@@ -71,11 +75,17 @@ export function ObjectProperties() {
     addAnchor("stake", { x: halfLength + toMillimeters(300, unit), y: 0, z: 0 }, "Stake");
   };
   const addTieOut = () => {
-    addAnchor("tie-out", { x: 0, y: peakHeight / 2, z: halfWidth }, "Tie-out");
+    const fabricPosition = { x: 0, y: peakHeight / 2, z: halfWidth };
+    const groundPosition = { x: 0, y: 0, z: halfWidth + toMillimeters(500, unit) };
+    addTieOutAction(fabricPosition, groundPosition);
   };
 
   const addStraightPole = () => {
     addStraightPoleTemplate({ x: 0, y: 0, z: halfWidth }, { x: 0, y: peakHeight * 0.6, z: 0 });
+  };
+  const addSpreaderPole = () => {
+    const spreaderHeight = peakHeight * 0.5;
+    addSpreaderPoleTemplate({ x: -halfLength / 4, y: spreaderHeight, z: 0 }, { x: halfLength / 4, y: spreaderHeight, z: 0 });
   };
   const addHoopPole = () => {
     addHoopPoleTemplate({ x: 0, y: 0, z: -halfWidth }, { x: 0, y: peakHeight, z: 0 }, { x: 0, y: 0, z: halfWidth });
@@ -104,14 +114,16 @@ export function ObjectProperties() {
       <h3>Pole system</h3>
       <div className="add-buttons">
         <button onClick={addStraightPole}>+ Straight pole</button>
+        <button onClick={addSpreaderPole}>+ Spreader pole</button>
         <button onClick={addHoopPole}>+ Hoop pole</button>
         <button onClick={addHubPoleSet}>+ Hub pole set</button>
         <button onClick={addLoneHub}>+ Hub</button>
       </div>
       <p className="hint">
-        Templates drop in ready-made pieces you can drag into place. To join two existing
-        joints yourself (e.g. attach a spreader to a hub), select one, click "Start connection
-        here" below, then select the other.
+        Templates drop in ready-made pieces you can drag into place. A spreader's ends are
+        hubs, so you can weld either one onto an existing hub: select the spreader's end,
+        click "Start connection here" below, then select the hub to attach it to. To join two
+        joints with a new strut instead (not merge them), pick a pole kind in that same form.
       </p>
 
       {!selection && <p className="hint">Select a point in either view to edit it here.</p>}
@@ -122,13 +134,26 @@ export function ObjectProperties() {
           if (!anchor) return null;
           const commit = (partial: Partial<Vector3>) =>
             moveAnchor(anchor.id, { ...anchor.position, ...partial });
+          const commitGround = (partial: Partial<Vector3>) =>
+            anchor.groundPosition && moveTieOutGround(anchor.id, { ...anchor.groundPosition, ...partial });
           return (
             <div className="selected-point">
               <h4>{anchor.name}</h4>
               <p className="type-label">{anchor.type}</p>
+              <p className="hint">{anchor.type === "tie-out" ? "Fabric attachment" : "Position"}</p>
               <Coord label="X" valueMm={anchor.position.x} unit={unit} onCommit={(v) => commit({ x: v })} />
               <Coord label="Y" valueMm={anchor.position.y} unit={unit} onCommit={(v) => commit({ y: v })} />
               <Coord label="Z" valueMm={anchor.position.z} unit={unit} onCommit={(v) => commit({ z: v })} />
+
+              {anchor.type === "tie-out" && anchor.groundPosition && (
+                <div className="pole-length">
+                  <p className="hint">Ground stake</p>
+                  <Coord label="X" valueMm={anchor.groundPosition.x} unit={unit} onCommit={(v) => commitGround({ x: v })} />
+                  <Coord label="Y" valueMm={anchor.groundPosition.y} unit={unit} onCommit={(v) => commitGround({ y: v })} />
+                  <Coord label="Z" valueMm={anchor.groundPosition.z} unit={unit} onCommit={(v) => commitGround({ z: v })} />
+                </div>
+              )}
+
               {(anchor.type === "stake" || anchor.type === "tie-out") && (
                 <button
                   className="danger"
@@ -172,6 +197,10 @@ export function ObjectProperties() {
                     toName={joint.name}
                     onConnect={(kind) => {
                       addSegment(pendingJointId, joint.id, kind);
+                      cancelConnection();
+                    }}
+                    onMerge={() => {
+                      mergeJoints(joint.id, pendingJointId);
                       cancelConnection();
                     }}
                     onCancel={cancelConnection}
@@ -245,19 +274,25 @@ function ConnectJointForm({
   fromName,
   toName,
   onConnect,
+  onMerge,
   onCancel,
 }: {
   fromName: string;
   toName: string;
   onConnect: (kind: PoleSegmentKind) => void;
+  onMerge: () => void;
   onCancel: () => void;
 }) {
   const kinds: PoleSegmentKind[] = ["spreader-pole", "support-pole", "straight-pole", "trekking-pole"];
   return (
     <div className="connect-form">
       <p className="hint">
-        Connect "{fromName}" → "{toName}" as:
+        Attach "{fromName}" to "{toName}":
       </p>
+      <div className="add-buttons">
+        <button onClick={onMerge}>Attach directly (merge into one point)</button>
+      </div>
+      <p className="hint">...or join them with a new pole instead of merging:</p>
       <div className="add-buttons">
         {kinds.map((kind) => (
           <button key={kind} onClick={() => onConnect(kind)}>

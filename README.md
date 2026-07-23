@@ -74,9 +74,34 @@ arc length while repositioning a point is an inverse elastica problem this
 MVP doesn't attempt); their length is just kept up to date live.
 
 `panels/ObjectProperties.tsx` offers one-click templates (straight pole,
-hoop pole, a "hub pole set" — two hubs joined by a spreader, each splitting
-into two legs) plus a generic "connect two existing joints" flow for
-building anything else by hand (e.g. attaching a spreader to a hub).
+spreader pole, hoop pole, a "hub pole set" — two hubs joined by a spreader,
+each splitting into two legs) plus two ways to join joints by hand:
+"connect" adds a new strut between them, while "attach directly" (merge)
+welds them into a single point — how you'd weld a spreader's end onto an
+existing hub, since a spreader's own ends are hubs (`tentStore.mergeJoints`).
+
+## Fly fabric follows the poles
+
+The roof (fly) panels aren't fixed to the two original ridge ends — they're
+recomputed after every edit (`geometry/regenerateFlyFabric.ts`, run from
+`tentStore`'s shared `withHistory` wrapper) from whichever "apex" joints
+currently exist, sorted by x. The front/back slopes become a fan from the
+front/back base line (the eave line if the tent has walls, otherwise the
+floor corners) across every apex point, so adding a straight pole or a hoop
+mid-tent bends the roofline through its peak instead of leaving it floating
+under a flat, unchanged fly. Hub joints are treated as interior supports and
+never affect the roofline — only "apex" joints do. Floor and wall panels
+stay fixed to the corner/eave anchors, since they don't depend on how many
+poles exist.
+
+## Two-ended tie-outs
+
+A tie-out anchor has two positions instead of one: `position` is where it
+attaches to the tent fabric, and `groundPosition` is the separate point
+where its guy-line stakes into the ground (`AnchorPoint.groundPosition`).
+Both ends are independently draggable in the 2D plan (with a dashed leader
+line between them) and rendered as a thin dashed guy-line in 3D
+(`editor3d/TieOutMesh.tsx`).
 
 ## Dimension auto-sync
 

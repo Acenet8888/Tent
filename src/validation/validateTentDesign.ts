@@ -1,4 +1,4 @@
-import type { TentDesign, Vector3 } from "../types/tent";
+import type { AnchorPoint, TentDesign, Vector3 } from "../types/tent";
 import { calculateDistance, currentSegmentLength } from "../geometry/measurements";
 import { buildPointLookup, resolvePoint } from "../geometry/generateFabricPanels";
 
@@ -106,6 +106,9 @@ function validateDuplicatePoints(design: TentDesign): ValidationIssue[] {
   const points: { id: string; name: string; position: Vector3 }[] = [
     ...design.anchors.map((a) => ({ id: a.id, name: a.name, position: a.position })),
     ...design.poleJoints.map((j) => ({ id: j.id, name: j.name, position: j.position })),
+    ...design.anchors
+      .filter((a): a is AnchorPoint & { groundPosition: Vector3 } => a.groundPosition !== undefined)
+      .map((a) => ({ id: `${a.id}:ground`, name: `${a.name} (ground stake)`, position: a.groundPosition })),
   ];
 
   for (let i = 0; i < points.length; i++) {

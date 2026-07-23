@@ -9,7 +9,8 @@ import type {
   Vector3,
 } from "../types/tent";
 import { calculateDistance, currentSegmentLength } from "./measurements";
-import { generateFabricPanels, deriveSeamsFromPanels, type PanelSpec } from "./generateFabricPanels";
+import { generateFabricPanels, type PanelSpec } from "./generateFabricPanels";
+import { regenerateRoofPanels } from "./regenerateFlyFabric";
 import { toMillimeters } from "../units/conversions";
 
 export type TentDimensionsInput = {
@@ -116,7 +117,9 @@ export function generateDefaultTentDesign(input: TentDimensionsInput): TentDesig
     },
   ];
 
-  let panelSpecs: PanelSpec[];
+  const panelSpecs: PanelSpec[] = [
+    { name: "Floor", boundaryPointIds: [cornerA.id, cornerB.id, cornerC.id, cornerD.id] },
+  ];
 
   if (wallHeightMm && wallHeightMm > 0) {
     const wallTopA: AnchorPoint = { id: createId("anchor"), name: "Eave (Front-Left)", type: "eave", locked: false, position: { x: -halfLength, y: wallHeightMm, z: -halfWidth } };
@@ -125,31 +128,21 @@ export function generateDefaultTentDesign(input: TentDimensionsInput): TentDesig
     const wallTopD: AnchorPoint = { id: createId("anchor"), name: "Eave (Back-Left)", type: "eave", locked: false, position: { x: -halfLength, y: wallHeightMm, z: halfWidth } };
     anchors.push(wallTopA, wallTopB, wallTopC, wallTopD);
 
-    panelSpecs = [
-      { name: "Floor", boundaryPointIds: [cornerA.id, cornerB.id, cornerC.id, cornerD.id] },
+    panelSpecs.push(
       { name: "Front Wall", boundaryPointIds: [cornerA.id, cornerB.id, wallTopB.id, wallTopA.id] },
       { name: "Right End Wall", boundaryPointIds: [cornerB.id, cornerC.id, wallTopC.id, wallTopB.id] },
       { name: "Back Wall", boundaryPointIds: [cornerC.id, cornerD.id, wallTopD.id, wallTopC.id] },
-      { name: "Left End Wall", boundaryPointIds: [cornerD.id, cornerA.id, wallTopA.id, wallTopD.id] },
-      { name: "Front Roof Slope", boundaryPointIds: [wallTopA.id, wallTopB.id, apexRight.id, apexLeft.id] },
-      { name: "Back Roof Slope", boundaryPointIds: [wallTopD.id, wallTopC.id, apexRight.id, apexLeft.id] },
-      { name: "Left Gable", boundaryPointIds: [wallTopA.id, wallTopD.id, apexLeft.id] },
-      { name: "Right Gable", boundaryPointIds: [wallTopB.id, wallTopC.id, apexRight.id] },
-    ];
-  } else {
-    panelSpecs = [
-      { name: "Floor", boundaryPointIds: [cornerA.id, cornerB.id, cornerC.id, cornerD.id] },
-      { name: "Front Roof Slope", boundaryPointIds: [cornerA.id, cornerB.id, apexRight.id, apexLeft.id] },
-      { name: "Back Roof Slope", boundaryPointIds: [cornerD.id, cornerC.id, apexRight.id, apexLeft.id] },
-      { name: "Left Gable", boundaryPointIds: [cornerA.id, cornerD.id, apexLeft.id] },
-      { name: "Right Gable", boundaryPointIds: [cornerB.id, cornerC.id, apexRight.id] },
-    ];
+      { name: "Left End Wall", boundaryPointIds: [cornerD.id, cornerA.id, wallTopA.id, wallTopD.id] }
+    );
   }
 
+  // The floor/wall panels above are fixed to the corner/eave anchors and
+  // built once here; the roof (fly) panels are derived from whichever apex
+  // joints currently exist, via the same function every later pole edit
+  // uses, so a freshly-generated tent and an edited one always agree.
   const fabricPanels = generateFabricPanels(panelSpecs);
-  const seams = deriveSeamsFromPanels(fabricPanels);
 
-  return {
+  const design: TentDesign = {
     id: createId("tent"),
     dimensions: {
       length: lengthMm,
@@ -163,7 +156,7 @@ export function generateDefaultTentDesign(input: TentDimensionsInput): TentDesig
     poleSegments,
     anchors,
     ridgelines,
-    seams,
+    seams: [],
     fabricPanels,
     display: {
       showDimensions: true,
@@ -173,6 +166,8 @@ export function generateDefaultTentDesign(input: TentDimensionsInput): TentDesig
       transparentFabric: false,
     },
   };
+
+  return regenerateRoofPanels(design);
 }
 
 /**
@@ -268,6 +263,18 @@ export function createStraightPoleTemplate(
   const apex = makeJoint("Pole Tip", "apex", apexPosition);
   const segment = makeStraightSegment("Pole", kind, ground, apex);
   return { joints: [ground, apex], segments: [segment] };
+}
+
+/**
+ * A transverse spreader: a straight strut between two hub joints, meant to
+ * be attached (merged, not just connected) into other hubs at one or both
+ * ends afterward — see tentStore.mergeJoints.
+ */
+export function createSpreaderPoleTemplate(hubAPosition: Vector3, hubBPosition: Vector3): PoleTemplateResult {
+  const hubA = makeJoint("Spreader End A", "hub", hubAPosition);
+  const hubB = makeJoint("Spreader End B", "hub", hubBPosition);
+  const segment = makeStraightSegment("Spreader Pole", "spreader-pole", hubA, hubB);
+  return { joints: [hubA, hubB], segments: [segment] };
 }
 
 /** A hoop pole: ground → arc through peak → ground, as one continuously-curved segment. */

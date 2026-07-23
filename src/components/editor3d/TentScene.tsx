@@ -8,6 +8,7 @@ import { PoleJointMesh } from "./PoleJointMesh";
 import { PoleSegmentMesh } from "./PoleSegmentMesh";
 import { RidgelineMesh } from "./RidgelineMesh";
 import { FabricMesh } from "./FabricMesh";
+import { TieOutMesh } from "./TieOutMesh";
 import { mmToScene } from "./sceneUnits";
 
 export function TentScene() {
@@ -52,6 +53,12 @@ export function TentScene() {
         const [start, end] = resolved;
         return <RidgelineMesh key={ridgeline.id} ridgeline={ridgeline} start={start} end={end} />;
       })}
+
+      {design.anchors
+        .filter((a): a is typeof a & { groundPosition: NonNullable<typeof a.groundPosition> } => a.groundPosition !== undefined)
+        .map((anchor) => (
+          <TieOutMesh key={anchor.id} anchor={anchor} />
+        ))}
 
       {design.fabricPanels.map((panel) => (
         <FabricMesh

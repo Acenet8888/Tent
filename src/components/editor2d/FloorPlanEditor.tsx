@@ -17,6 +17,7 @@ const MAX_SCALE = 2;
 export function FloorPlanEditor() {
   const design = useTentStore((s) => s.design);
   const moveAnchor = useTentStore((s) => s.moveAnchor);
+  const moveTieOutGround = useTentStore((s) => s.moveTieOutGround);
   const clearSelection = useSelectionStore((s) => s.clear);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -240,6 +241,11 @@ export function FloorPlanEditor() {
               const current = design.anchors.find((a) => a.id === id);
               if (!current) return;
               moveAnchor(id, { x, y: current.position.y, z }, { skipHistory });
+            }}
+            onMoveGround={(id, x, z, skipHistory) => {
+              const current = design.anchors.find((a) => a.id === id);
+              if (!current?.groundPosition) return;
+              moveTieOutGround(id, { x, y: current.groundPosition.y, z }, { skipHistory });
             }}
           />
         ))}

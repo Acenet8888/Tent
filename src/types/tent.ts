@@ -96,11 +96,19 @@ export type AnchorType = "corner" | "stake" | "tie-out" | "eave";
 export type AnchorPoint = {
   id: string;
   name: string;
+  /** Where this anchor attaches to the tent (a fabric point, a floor corner, a wall-top eave). */
   position: Vector3;
 
   type: AnchorType;
 
   locked: boolean;
+
+  /**
+   * Only meaningful when type is "tie-out": a tie-out has two ends — the
+   * attachment on the tent fabric (`position`) and the separate point on
+   * the ground where its guy-line stakes down.
+   */
+  groundPosition?: Vector3;
 };
 
 export type Ridgeline = {
