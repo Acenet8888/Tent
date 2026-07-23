@@ -22,6 +22,7 @@ import {
 } from "../geometry/generateTentGeometry";
 import { reconcileJointMove, subtract, scale, add, calculateDistance } from "../geometry/measurements";
 import { regenerateRoofPanels } from "../geometry/regenerateFlyFabric";
+import { computeConvexFlyEnvelope } from "../geometry/computeFlyEnvelope";
 import { useHistoryStore } from "./historyStore";
 
 type Dimensions = TentDesign["dimensions"];
@@ -115,6 +116,18 @@ type TentState = {
   ) => void;
 
   setDisplayOption: (partial: Partial<TentDesign["display"]>) => void;
+
+  /**
+   * One-shot: recomputes the fly as the 3D convex hull of the base
+   * perimeter plus every hub/apex joint, keeping only its upward-facing
+   * faces (see geometry/computeFlyEnvelope.ts). Unlike every other action,
+   * this deliberately bypasses the automatic regenerateRoofPanels sweep in
+   * withHistory — that sweep would otherwise immediately overwrite the
+   * hull result with the incremental method's output. The next edit still
+   * reverts to the incremental sweep; this is a manual "finalize now", not
+   * a permanent mode switch.
+   */
+  recalculateFlyEnvelope: () => void;
 
   undo: () => void;
   redo: () => void;
@@ -424,6 +437,12 @@ export const useTentStore = create<TentState>((set, get) => ({
     set((state) => ({
       design: { ...state.design, display: { ...state.design.display, ...partial } },
     }));
+  },
+
+  recalculateFlyEnvelope: () => {
+    const current = get().design;
+    useHistoryStore.getState().record(current);
+    set({ design: computeConvexFlyEnvelope(current) });
   },
 
   undo: () => {

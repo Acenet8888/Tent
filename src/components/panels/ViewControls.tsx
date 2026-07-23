@@ -11,6 +11,7 @@ const PRESETS: { id: CameraPreset; label: string }[] = [
 export function ViewControls() {
   const display = useTentStore((s) => s.design.display);
   const setDisplayOption = useTentStore((s) => s.setDisplayOption);
+  const recalculateFlyEnvelope = useTentStore((s) => s.recalculateFlyEnvelope);
   const requestPreset = useCameraStore((s) => s.requestPreset);
 
   return (
@@ -57,6 +58,14 @@ export function ViewControls() {
         />
         Transparent fabric
       </label>
+
+      <h4>Fly fabric</h4>
+      <button onClick={recalculateFlyEnvelope}>Recalculate fly</button>
+      <p className="hint">
+        Fits the fly to the outermost 3D envelope over every current pole (its convex hull),
+        instead of the live incremental drape. A one-off recompute — the next edit reverts to
+        the incremental drape until you click this again.
+      </p>
 
       <h4>Camera</h4>
       <div className="camera-presets">

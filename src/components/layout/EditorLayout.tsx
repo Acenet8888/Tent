@@ -6,6 +6,7 @@ import { TentScene } from "../editor3d/TentScene";
 import { DesignControls } from "../panels/DesignControls";
 import { ObjectProperties } from "../panels/ObjectProperties";
 import { ViewControls } from "../panels/ViewControls";
+import { ComponentList } from "../panels/ComponentList";
 
 export function EditorLayout() {
   const design = useTentStore((s) => s.design);
@@ -46,6 +47,7 @@ export function EditorLayout() {
         </main>
 
         <aside className="editor-sidebar-right">
+          <ComponentList />
           <ViewControls />
         </aside>
       </div>

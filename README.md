@@ -40,7 +40,9 @@ npm run build    # type-check and produce a production build
 - `src/components/editor3d/` — the linked Three.js viewport (poles,
   ridgelines, fabric, camera presets, wireframe/transparency toggles).
 - `src/components/panels/` and `src/components/layout/` — the surrounding
-  UI: dimension inputs, per-point properties, view toggles, undo/redo.
+  UI: dimension inputs, per-point properties, view toggles, undo/redo, and
+  a `ComponentList` (right sidebar) enumerating every anchor/joint/segment
+  as a clickable row for selection without hunting through the 2D/3D views.
 
 ## Coordinate system
 
@@ -125,6 +127,30 @@ that visually hid the dip behind a flat one. It now triangulates any panel
 via ear-clipping on the (x, z) projection, which handles concave boundaries
 correctly — this replaced the fan for every panel, not just hoop-affected
 ones, since it's a strictly more general and correct algorithm.
+
+### "Recalculate fly": an on-demand alternative to the incremental sweep
+
+`regenerateRoofPanels` above runs after every edit and needs the explicit
+`flyAttachment` flags because auto-detecting "which points are on the
+outside" for an arbitrary 3D pole arrangement is hard in general. The
+**Recalculate fly** button (View panel) sidesteps that by solving the
+narrower, well-posed version of the problem on demand:
+`geometry/computeFlyEnvelope.ts` computes the actual 3D convex hull (via
+`ConvexHull` from `three-stdlib`) of the base perimeter plus every hub/apex
+joint, then keeps only the hull's upward-facing faces as fly panels
+(`hull-fly-*` ids) — the fly ends up draped over the true outermost
+envelope of whatever poles currently exist, no per-point flags needed, and
+it naturally drops interior points that don't reach the envelope.
+
+The tradeoff: a convex hull can't represent a concave roofline (a valley
+between two peaks always gets pulled taut), and it's a one-shot recompute,
+not a mode switch — `tentStore.recalculateFlyEnvelope()` deliberately
+bypasses the `withHistory` wrapper's automatic `regenerateRoofPanels` call
+(which would otherwise immediately overwrite the hull result), but the
+next edit still goes through that automatic incremental sweep and reverts
+to it. `stripFlyPanels` (`regenerateFlyFabric.ts`) is shared by both
+methods so neither leaves the other's panels lying around as duplicate
+fabric — whichever ran last fully owns the roof panel set.
 
 ## Two-ended tie-outs
 

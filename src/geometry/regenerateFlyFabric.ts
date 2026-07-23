@@ -9,6 +9,20 @@ import { ARC_SAMPLE_STEPS, arcSamplePointId, deriveSeamsFromPanels } from "./gen
  */
 const ROOF_PANEL_IDS = ["roof-front-slope", "roof-back-slope", "roof-left-gable", "roof-right-gable"];
 
+/** Id prefix used by computeFlyEnvelope.ts's convex-hull "Recalculate Fly" panels. */
+export const HULL_FLY_PREFIX = "hull-fly-";
+
+/**
+ * Strips out fly/roof panels regardless of which method produced them, so
+ * the incremental per-edit sweep (regenerateRoofPanels) and the one-shot
+ * convex-hull recompute (computeFlyEnvelope.ts) never leave each other's
+ * output lying around as duplicate/overlapping fabric — each one fully
+ * owns replacing the other's prior result alongside its own.
+ */
+export function stripFlyPanels(panels: FabricPanel[]): FabricPanel[] {
+  return panels.filter((p) => !ROOF_PANEL_IDS.includes(p.id) && !p.id.startsWith(HULL_FLY_PREFIX));
+}
+
 /** True if the fly drapes over this joint, honoring an explicit override or falling back to "apex only". */
 export function isFlyAttachedJoint(joint: PoleJoint): boolean {
   return joint.flyAttachment ?? joint.type === "apex";
@@ -88,7 +102,7 @@ function hoopArcHalves(
  * shared `withHistory` wrapper rather than from each action.
  */
 export function regenerateRoofPanels(design: TentDesign): TentDesign {
-  const nonRoofPanels = design.fabricPanels.filter((p) => !ROOF_PANEL_IDS.includes(p.id));
+  const nonRoofPanels = stripFlyPanels(design.fabricPanels);
 
   const hasWalls = design.anchors.some((a) => a.type === "eave");
   const structuralBase = design.anchors.filter((a) => a.type === (hasWalls ? "eave" : "corner"));
