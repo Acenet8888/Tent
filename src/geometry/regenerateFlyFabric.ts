@@ -1,5 +1,5 @@
-import type { AnchorPoint, FabricPanel, PoleJoint, TentDesign } from "../types/tent";
-import { deriveSeamsFromPanels } from "./generateFabricPanels";
+import type { AnchorPoint, FabricPanel, PoleJoint, PoleSegment, TentDesign, Vector3 } from "../types/tent";
+import { ARC_SAMPLE_STEPS, arcSamplePointId, deriveSeamsFromPanels } from "./generateFabricPanels";
 
 /**
  * Stable ids for the four roof-related panels so regeneration can find and
@@ -19,6 +19,49 @@ export function isFlyAttachedAnchor(anchor: AnchorPoint): boolean {
   return anchor.flyAttachment ?? (anchor.type === "corner" || anchor.type === "eave");
 }
 
+function inclusiveRange(from: number, to: number): number[] {
+  const result: number[] = [];
+  if (from <= to) {
+    for (let i = from; i <= to; i++) result.push(i);
+  } else {
+    for (let i = from; i >= to; i--) result.push(i);
+  }
+  return result;
+}
+
+/**
+ * If `joint` is the peak of a hoop (the archJointId of an arc segment),
+ * returns the sampled-curve point ids from the peak down to each of the
+ * hoop's two ground ends — one sequence per side of the tent (front/back,
+ * split by which ground end is on which side of centroidZ) — so the fly can
+ * follow the hoop's actual bend instead of cutting a straight chord from a
+ * single peak vertex down to the baseline. Returns undefined for a plain
+ * (non-hoop) joint, which keeps contributing just its own id as before.
+ */
+function hoopArcHalves(
+  joint: PoleJoint,
+  segments: PoleSegment[],
+  jointPositions: Map<string, Vector3>,
+  centroidZ: number
+): { front: string[]; back: string[] } | undefined {
+  const segment = segments.find((s) => s.shape === "arc" && s.archJointId === joint.id);
+  if (!segment) return undefined;
+
+  const startPos = jointPositions.get(segment.startJointId);
+  const endPos = jointPositions.get(segment.endJointId);
+  if (!startPos || !endPos) return undefined;
+
+  const peakIndex = ARC_SAMPLE_STEPS / 2;
+  const startIsFront = startPos.z <= centroidZ;
+  const frontGroundIndex = startIsFront ? 0 : ARC_SAMPLE_STEPS;
+  const backGroundIndex = startIsFront ? ARC_SAMPLE_STEPS : 0;
+
+  return {
+    front: inclusiveRange(peakIndex, frontGroundIndex).map((i) => arcSamplePointId(segment.id, i)),
+    back: inclusiveRange(peakIndex, backGroundIndex).map((i) => arcSamplePointId(segment.id, i)),
+  };
+}
+
 /**
  * Recomputes the fly (roof) panels from whichever points are currently
  * flagged as fly attachments, rather than a fixed set decided at creation
@@ -34,11 +77,15 @@ export function isFlyAttachedAnchor(anchor: AnchorPoint): boolean {
  * a hard problem in general, so the user marks it instead.
  *
  * The front/back slopes fan from the base line up across every attached
- * apex/hub joint (sorted by x); the two gables connect the outermost
- * attached joint to the nearest base points. This should run after any
- * mutation that could add/remove/reorder attachment points or move the
- * base anchors, which is why it's called from tentStore's shared
- * `withHistory` wrapper rather than from each action.
+ * apex/hub joint (sorted by x); a hoop's peak contributes the sampled
+ * points along its actual curve (see hoopArcHalves) instead of a single
+ * vertex, so the fly follows the hoop's full bend down to the ground on
+ * both sides rather than cutting a straight chord to it. The two gables
+ * connect the outermost attached joint to the nearest base points (using
+ * just the peak, not the curve, since gables are end caps). This should
+ * run after any mutation that could add/remove/reorder attachment points
+ * or move the base anchors, which is why it's called from tentStore's
+ * shared `withHistory` wrapper rather than from each action.
  */
 export function regenerateRoofPanels(design: TentDesign): TentDesign {
   const nonRoofPanels = design.fabricPanels.filter((p) => !ROOF_PANEL_IDS.includes(p.id));
@@ -69,22 +116,28 @@ export function regenerateRoofPanels(design: TentDesign): TentDesign {
     return { ...design, fabricPanels, seams: deriveSeamsFromPanels(fabricPanels) };
   }
 
-  // Both slopes trace their own base line ascending by x, then the ridge
-  // descending by x, so the loop closes without crossing itself (tracing
-  // the ridge in the "same" ascending direction as the base line would
-  // produce a self-intersecting bowtie quad instead of a simple trapezoid).
-  const flyIdsDesc = flyJoints.map((j) => j.id).reverse();
+  const jointPositions = new Map(design.poleJoints.map((j) => [j.id, j.position]));
+  const flyJointsDescendingX = [...flyJoints].sort((a, b) => b.position.x - a.position.x);
+
+  function ridgeIds(side: "front" | "back"): string[] {
+    const ids: string[] = [];
+    for (const joint of flyJointsDescendingX) {
+      const halves = hoopArcHalves(joint, design.poleSegments, jointPositions, centroidZ);
+      ids.push(...(halves ? halves[side] : [joint.id]));
+    }
+    return ids;
+  }
 
   const roofPanels: FabricPanel[] = [
     {
       id: "roof-front-slope",
       name: "Front Roof Slope",
-      boundaryPointIds: [...frontLine.map((a) => a.id), ...flyIdsDesc],
+      boundaryPointIds: [...frontLine.map((a) => a.id), ...ridgeIds("front")],
     },
     {
       id: "roof-back-slope",
       name: "Back Roof Slope",
-      boundaryPointIds: [...backLine.map((a) => a.id), ...flyIdsDesc],
+      boundaryPointIds: [...backLine.map((a) => a.id), ...ridgeIds("back")],
     },
     {
       id: "roof-left-gable",

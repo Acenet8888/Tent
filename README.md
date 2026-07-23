@@ -108,6 +108,24 @@ their own base line ascending by x and the ridge *descending* by x — tracing
 the ridge in the same direction as the base line produces a self-intersecting
 bowtie quad instead of a simple trapezoid.
 
+A hoop's peak contributes more than a single vertex: `buildPointLookup`
+(`geometry/generateFabricPanels.ts`) exposes a synthetic
+`arcSamplePointId(segmentId, i)` point for every sample along an arc
+segment's curve, and `regenerateRoofPanels` splices the appropriate half of
+those samples (split at the curve's exact midpoint, which is the peak) into
+the front/back slope boundary instead of just the peak joint — so the fly
+follows the hoop's actual bend down to the ground on both sides rather than
+cutting a straight chord from the peak to the baseline.
+
+That in turn forced a real triangulation fix: a boundary that dips inward
+like this isn't "star-shaped" from a single fan origin (some vertices fold
+back to angles already swept by earlier triangles), so the naive
+fan-from-vertex-0 in `triangulatePanel.ts` produced overlapping triangles
+that visually hid the dip behind a flat one. It now triangulates any panel
+via ear-clipping on the (x, z) projection, which handles concave boundaries
+correctly — this replaced the fan for every panel, not just hoop-affected
+ones, since it's a strictly more general and correct algorithm.
+
 ## Two-ended tie-outs
 
 A tie-out anchor has two positions instead of one: `position` is where it

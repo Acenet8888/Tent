@@ -1,15 +1,28 @@
-import type { AnchorPoint, FabricPanel, PoleJoint, Ridgeline, Seam, Vector3 } from "../types/tent";
+import type { AnchorPoint, FabricPanel, PoleJoint, PoleSegment, Ridgeline, Seam, Vector3 } from "../types/tent";
+import { sampleArc } from "./measurements";
 
 export type PointLookup = Map<string, Vector3>;
 
+/** Number of points sampled along an arc segment's curve for both rendering and fly-panel boundaries. */
+export const ARC_SAMPLE_STEPS = 16;
+
+/** The synthetic point id for the i-th sample along an arc segment's curve (see buildPointLookup). */
+export function arcSamplePointId(segmentId: string, index: number): string {
+  return `${segmentId}:arc:${index}`;
+}
+
 /**
- * Builds a lookup from every point id (anchors and pole joints) to its 3D
- * position, so panel/seam generation can resolve boundary ids without
- * caring whether a point comes from an anchor or a pole joint. Joints are
- * addressable directly by their own id (unlike the old ground/tip pole
- * pair, there's no synthetic suffix to reconstruct).
+ * Builds a lookup from every point id (anchors, pole joints, and synthetic
+ * per-sample points along each arc segment's curve) to its 3D position, so
+ * panel/seam generation can resolve boundary ids without caring whether a
+ * point comes from an anchor, a pole joint, or a point along a hoop's bend.
+ * Joints are addressable directly by their own id (unlike the old
+ * ground/tip pole pair, there's no synthetic suffix to reconstruct there);
+ * arc segments additionally get `arcSamplePointId(segment.id, i)` entries
+ * so a fabric panel can trace the actual curve instead of just its two
+ * ground ends and peak.
  */
-export function buildPointLookup(anchors: AnchorPoint[], joints: PoleJoint[]): PointLookup {
+export function buildPointLookup(anchors: AnchorPoint[], joints: PoleJoint[], segments: PoleSegment[] = []): PointLookup {
   const lookup: PointLookup = new Map();
   for (const anchor of anchors) {
     lookup.set(anchor.id, anchor.position);
@@ -17,6 +30,18 @@ export function buildPointLookup(anchors: AnchorPoint[], joints: PoleJoint[]): P
   for (const joint of joints) {
     lookup.set(joint.id, joint.position);
   }
+
+  const jointPositions = new Map(joints.map((j) => [j.id, j.position]));
+  for (const segment of segments) {
+    if (segment.shape !== "arc" || !segment.archJointId) continue;
+    const start = jointPositions.get(segment.startJointId);
+    const apex = jointPositions.get(segment.archJointId);
+    const end = jointPositions.get(segment.endJointId);
+    if (!start || !apex || !end) continue;
+    const points = sampleArc(start, apex, end, ARC_SAMPLE_STEPS);
+    points.forEach((point, i) => lookup.set(arcSamplePointId(segment.id, i), point));
+  }
+
   return lookup;
 }
 

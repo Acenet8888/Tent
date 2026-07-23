@@ -15,8 +15,8 @@ export function TentScene() {
   const design = useTentStore((s) => s.design);
 
   const lookup = useMemo(
-    () => buildPointLookup(design.anchors, design.poleJoints),
-    [design.anchors, design.poleJoints]
+    () => buildPointLookup(design.anchors, design.poleJoints, design.poleSegments),
+    [design.anchors, design.poleJoints, design.poleSegments]
   );
 
   const gridSize = Math.max(mmToScene(design.dimensions.length), mmToScene(design.dimensions.width)) * 3 + 4;

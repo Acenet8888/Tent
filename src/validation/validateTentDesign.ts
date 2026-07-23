@@ -130,7 +130,7 @@ function validateDuplicatePoints(design: TentDesign): ValidationIssue[] {
 
 function validateSelfIntersectingPanels(design: TentDesign): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const lookup = buildPointLookup(design.anchors, design.poleJoints);
+  const lookup = buildPointLookup(design.anchors, design.poleJoints, design.poleSegments);
 
   for (const panel of design.fabricPanels) {
     const points = panel.boundaryPointIds

@@ -118,8 +118,8 @@ export function FloorPlanEditor() {
   }, []);
 
   const lookup = useMemo(
-    () => buildPointLookup(design.anchors, design.poleJoints),
-    [design.anchors, design.poleJoints]
+    () => buildPointLookup(design.anchors, design.poleJoints, design.poleSegments),
+    [design.anchors, design.poleJoints, design.poleSegments]
   );
 
   const panelOutlines = useMemo(
