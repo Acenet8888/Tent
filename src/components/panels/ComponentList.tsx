@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useTentStore } from "../../state/tentStore";
 import { useSelectionStore, type SelectionKind } from "../../state/selectionStore";
-import type { AnchorPoint, AnchorType, LengthUnit, PoleJoint, PoleJointType, PoleSegment, TentDesign } from "../../types/tent";
+import type { AnchorPoint, AnchorType, PoleJoint, PoleJointType, TentDesign } from "../../types/tent";
 import { formatLength } from "../../units/conversions";
 import {
   DEFAULT_POLE_DIAMETER_MM,
@@ -123,40 +123,44 @@ function JointGroup({ type, joints }: { type: PoleJointType; joints: PoleJoint[]
   );
 }
 
-function SegmentGroup({
-  segments,
-  lengthUnit,
-  weightUnit,
-}: {
-  segments: PoleSegment[];
-  lengthUnit: LengthUnit;
-  weightUnit: WeightUnit;
-}) {
-  if (segments.length === 0) return null;
+const FABRIC_TYPES: FabricType[] = ["dcf", "silnylon-20d"];
+
+const ANCHOR_TYPES: AnchorType[] = ["corner", "eave", "stake", "tie-out"];
+const JOINT_TYPES: PoleJointType[] = ["ground", "hub", "apex"];
+
+function ComponentsSection({ design }: { design: TentDesign }) {
+  const [expanded, setExpanded] = useState(true);
+
+  const hasComponents =
+    design.anchors.length > 0 || design.poleJoints.length > 0;
+
+  if (!hasComponents) return null;
 
   return (
-    <div className="component-group">
-      <h4>
-        Poles <span className="component-count">{segments.length}</span>
-      </h4>
-      {segments.map((s) => (
-        <Row
-          key={s.id}
-          label={s.name}
-          meta={`${formatLength(s.length, lengthUnit)} · ${formatWeight(estimatePoleWeightGrams(s), weightUnit)}`}
-          detail={s.shape}
-          color={SEGMENT_COLOR}
-          kind="segment"
-          id={s.id}
-        />
-      ))}
+    <div className="collapsible-section">
+      <button
+        className="section-header"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className="section-title">Components</span>
+        <span className={`section-toggle ${expanded ? "expanded" : ""}`}>▼</span>
+      </button>
+      {expanded && (
+        <div className="section-content">
+          {ANCHOR_TYPES.map((type) => (
+            <AnchorGroup key={type} type={type} anchors={design.anchors.filter((a) => a.type === type)} />
+          ))}
+          {JOINT_TYPES.map((type) => (
+            <JointGroup key={type} type={type} joints={design.poleJoints.filter((j) => j.type === type)} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-const FABRIC_TYPES: FabricType[] = ["dcf", "silnylon-20d"];
-
-function WeightsSection({ design }: { design: TentDesign }) {
+function WeightsSectionCollapsible({ design }: { design: TentDesign }) {
+  const [expanded, setExpanded] = useState(true);
   const [weightUnit, setWeightUnit] = useState<WeightUnit>("g");
   const [fabricType, setFabricType] = useState<FabricType>("dcf");
 
@@ -169,67 +173,87 @@ function WeightsSection({ design }: { design: TentDesign }) {
   if (design.poleSegments.length === 0 && flyAreaMm2 === 0) return null;
 
   return (
-    <div className="component-group">
-      <h4>
-        <span>Weights</span>
-        <span className="weight-unit-toggle">
-          {(["g", "oz"] as WeightUnit[]).map((u) => (
-            <button key={u} className={weightUnit === u ? "unit-active" : ""} onClick={() => setWeightUnit(u)}>
-              {u}
-            </button>
-          ))}
-        </span>
-      </h4>
+    <div className="collapsible-section">
+      <button
+        className="section-header"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className="section-title">Weights</span>
+        <span className={`section-toggle ${expanded ? "expanded" : ""}`}>▼</span>
+      </button>
+      {expanded && (
+        <div className="section-content">
+          <div className="component-group">
+            <h4>
+              <span>Poles</span>
+              <span className="weight-unit-toggle">
+                {(["g", "oz"] as WeightUnit[]).map((u) => (
+                  <button key={u} className={weightUnit === u ? "unit-active" : ""} onClick={() => setWeightUnit(u)}>
+                    {u}
+                  </button>
+                ))}
+              </span>
+            </h4>
+            {design.poleSegments.length > 0 && (
+              <>
+                {design.poleSegments.map((s) => (
+                  <Row
+                    key={s.id}
+                    label={s.name}
+                    meta={`${formatLength(s.length, design.dimensions.unit)} · ${formatWeight(estimatePoleWeightGrams(s), weightUnit)}`}
+                    detail={s.shape}
+                    color={SEGMENT_COLOR}
+                    kind="segment"
+                    id={s.id}
+                  />
+                ))}
+                <p className="hint weights-total">
+                  Total poles: {formatWeight(poleWeightGrams, weightUnit)}
+                </p>
+              </>
+            )}
+          </div>
 
-      <SegmentGroup segments={design.poleSegments} lengthUnit={design.dimensions.unit} weightUnit={weightUnit} />
+          <div className="component-group">
+            <h4>
+              <span>Fly fabric</span>
+              <span className="weight-unit-toggle">
+                {FABRIC_TYPES.map((f) => (
+                  <button key={f} className={fabricType === f ? "unit-active" : ""} onClick={() => setFabricType(f)}>
+                    {FABRIC_LABELS[f]}
+                  </button>
+                ))}
+              </span>
+            </h4>
+            <p className="hint weights-total">
+              {flyAreaM2.toFixed(2)} m² · {formatWeight(flyWeightGrams, weightUnit)} (
+              {FABRIC_DENSITY_G_PER_M2[fabricType]} g/m² {FABRIC_LABELS[fabricType]})
+            </p>
+          </div>
 
-      <div className="component-group">
-        <h4>
-          <span>Fly fabric</span>
-          <span className="weight-unit-toggle">
-            {FABRIC_TYPES.map((f) => (
-              <button key={f} className={fabricType === f ? "unit-active" : ""} onClick={() => setFabricType(f)}>
-                {FABRIC_LABELS[f]}
-              </button>
-            ))}
-          </span>
-        </h4>
-        <p className="hint weights-total">
-          {flyAreaM2.toFixed(2)} m² · {formatWeight(flyWeightGrams, weightUnit)} (
-          {FABRIC_DENSITY_G_PER_M2[fabricType]} g/m² {FABRIC_LABELS[fabricType]})
-        </p>
-      </div>
+          <p className="hint weights-total weights-grand-total">
+            Total tent weight: {formatWeight(totalWeightGrams, weightUnit)}
+          </p>
 
-      <p className="hint weights-total weights-grand-total">
-        Total tent weight: {formatWeight(totalWeightGrams, weightUnit)}
-      </p>
-
-      <p className="hint pole-weight-hint">
-        Pole weight assumes hollow 6061-T6 aluminium tubing, {DEFAULT_POLE_WALL_THICKNESS_MM}mm
-        wall, {DEFAULT_POLE_DIAMETER_MM}mm diameter where a pole's own diameter isn't set. Fabric
-        weight uses a single representative areal density per type (see geometry/fabricWeight.ts)
-        rather than a per-panel material spec. Both are labeled estimates, not a bill of materials.
-      </p>
+          <p className="hint pole-weight-hint">
+            Pole weight assumes hollow 6061-T6 aluminium tubing, {DEFAULT_POLE_WALL_THICKNESS_MM}mm
+            wall, {DEFAULT_POLE_DIAMETER_MM}mm diameter where a pole's own diameter isn't set. Fabric
+            weight uses a single representative areal density per type (see geometry/fabricWeight.ts)
+            rather than a per-panel material spec. Both are labeled estimates, not a bill of materials.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
-
-const ANCHOR_TYPES: AnchorType[] = ["corner", "eave", "stake", "tie-out"];
-const JOINT_TYPES: PoleJointType[] = ["ground", "hub", "apex"];
 
 export function ComponentList() {
   const design = useTentStore((s) => s.design);
 
   return (
     <div className="component-list">
-      <h3>Components</h3>
-      {ANCHOR_TYPES.map((type) => (
-        <AnchorGroup key={type} type={type} anchors={design.anchors.filter((a) => a.type === type)} />
-      ))}
-      {JOINT_TYPES.map((type) => (
-        <JointGroup key={type} type={type} joints={design.poleJoints.filter((j) => j.type === type)} />
-      ))}
-      <WeightsSection design={design} />
+      <ComponentsSection design={design} />
+      <WeightsSectionCollapsible design={design} />
     </div>
   );
 }
