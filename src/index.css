@@ -346,11 +346,24 @@ label {
   border-color: var(--accent);
 }
 
-.component-row-label {
+.component-row-text {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.component-row-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.component-row-meta {
+  font-size: 10px;
+  color: var(--text);
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
 }
 
 .component-row-detail {
@@ -358,4 +371,87 @@ label {
   color: var(--text);
   opacity: 0.7;
   text-transform: uppercase;
+}
+
+.weight-unit-toggle {
+  display: flex;
+  gap: 2px;
+}
+
+.weight-unit-toggle button {
+  font-size: 10px;
+  padding: 1px 6px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.weight-unit-toggle button.unit-active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.pole-weight-hint {
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 17, 21, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 24px;
+}
+
+.modal-content {
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 20px;
+  max-width: min(960px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.pattern-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.pattern-piece {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  text-align: center;
+  background: var(--panel-bg);
+}
+
+.pattern-piece h4 {
+  font-size: 12px;
+  margin: 0 0 6px;
+}
+
+.pattern-piece-area {
+  font-size: 11px;
+  color: var(--text);
+  margin: 6px 0 0;
 }

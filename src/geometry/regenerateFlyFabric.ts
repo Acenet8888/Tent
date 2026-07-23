@@ -23,6 +23,11 @@ export function stripFlyPanels(panels: FabricPanel[]): FabricPanel[] {
   return panels.filter((p) => !ROOF_PANEL_IDS.includes(p.id) && !p.id.startsWith(HULL_FLY_PREFIX));
 }
 
+/** True for a fly/roof panel produced by either regenerateRoofPanels or computeConvexFlyEnvelope. */
+export function isFlyPanel(panel: FabricPanel): boolean {
+  return ROOF_PANEL_IDS.includes(panel.id) || panel.id.startsWith(HULL_FLY_PREFIX);
+}
+
 /** True if the fly drapes over this joint, honoring an explicit override or falling back to "apex only". */
 export function isFlyAttachedJoint(joint: PoleJoint): boolean {
   return joint.flyAttachment ?? joint.type === "apex";

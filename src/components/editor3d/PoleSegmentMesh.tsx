@@ -2,10 +2,9 @@ import { useMemo } from "react";
 import * as THREE from "three";
 import type { PoleSegment, Vector3 } from "../../types/tent";
 import { sampleArc } from "../../geometry/measurements";
+import { DEFAULT_POLE_DIAMETER_MM } from "../../geometry/poleWeight";
 import { useSelectionStore } from "../../state/selectionStore";
 import { toSceneVec3, mmToScene } from "./sceneUnits";
-
-const DEFAULT_DIAMETER_MM = 9;
 
 type PoleSegmentMeshProps = {
   segment: PoleSegment;
@@ -38,7 +37,7 @@ export function PoleSegmentMesh({ segment, jointLookup }: PoleSegmentMeshProps) 
     return [start, end];
   }, [start, end, apex, segment.shape]);
 
-  const radius = mmToScene(segment.diameter ?? DEFAULT_DIAMETER_MM) / 2;
+  const radius = mmToScene(segment.diameter ?? DEFAULT_POLE_DIAMETER_MM) / 2;
   const color = isSelected ? "#ffb020" : "#8a8f98";
 
   const handleClick = (e: { stopPropagation: () => void }) => {

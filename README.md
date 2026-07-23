@@ -177,6 +177,34 @@ relative to what you dragged (see `syncDimensionsFromCorners` and friends in
 rescales the existing geometry proportionally rather than regenerating it,
 so custom poles/anchors survive a resize.
 
+## Pole weight estimate
+
+Each pole row in the component list shows its live length and an estimated
+weight (`geometry/poleWeight.ts`), with a g/oz toggle. Poles are hollow
+tubing, not solid rod, so the estimate uses a cross-sectional area (outer
+diameter minus an assumed wall thickness) rather than a solid rod's area —
+using solid rod would overestimate by 3-5x. Neither wall thickness nor
+alloy is tracked per-segment, so this is a labeled estimate against fixed
+assumptions (6061-T6 aluminium, ~2.70 g/cm³; 0.9mm wall; 9mm diameter where
+a pole's own `diameter` isn't set) rather than a precise per-pole spec —
+called out directly in the UI so it doesn't read as more precise than it is.
+
+## Fly cut pattern
+
+The "View cut pattern" button (View panel) flattens every current fly
+panel into a 2D pattern piece for sewing (`geometry/flattenPanel.ts`). It
+places a seed triangle, then propagates outward triangle-by-triangle across
+shared edges, placing each new point via the law of cosines from the true
+3D edge lengths — so a planar panel (every panel except a hoop-affected
+roof slope) comes out geometrically exact, same as a pattern-maker's hand
+construction. A genuinely curved panel (a hoop's sampled arc) can't be
+unrolled flat without a dart or seam, so that comes out as a close
+approximation that keeps edge lengths exact at the cost of minor angular
+drift — the property that actually matters for cutting fabric to size.
+Runs of consecutive short edges (a hoop's densely-sampled curve) collapse
+into a single labeled "curve" length instead of one illegible label per
+tiny segment.
+
 ## Current scope
 
 Milestones 1–4 (parametric base tent, interactive 2D editor, linked 3D view,

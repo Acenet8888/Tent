@@ -1,6 +1,15 @@
+import { useState } from "react";
 import { useTentStore } from "../../state/tentStore";
 import { useSelectionStore, type SelectionKind } from "../../state/selectionStore";
-import type { AnchorPoint, AnchorType, PoleJoint, PoleJointType, PoleSegment } from "../../types/tent";
+import type { AnchorPoint, AnchorType, LengthUnit, PoleJoint, PoleJointType, PoleSegment } from "../../types/tent";
+import { formatLength } from "../../units/conversions";
+import {
+  DEFAULT_POLE_DIAMETER_MM,
+  DEFAULT_POLE_WALL_THICKNESS_MM,
+  estimatePoleWeightGrams,
+  formatWeight,
+  type WeightUnit,
+} from "../../geometry/poleWeight";
 
 const ANCHOR_COLORS: Record<AnchorType, string> = {
   corner: "#3b6ef0",
@@ -48,12 +57,14 @@ function Dot({ color }: { color: string }) {
 function Row({
   label,
   detail,
+  meta,
   color,
   kind,
   id,
 }: {
   label: string;
   detail?: string;
+  meta?: string;
   color: string;
   kind: SelectionKind;
   id: string;
@@ -68,7 +79,10 @@ function Row({
       onClick={() => select(kind, id)}
     >
       <Dot color={color} />
-      <span className="component-row-label">{label}</span>
+      <span className="component-row-text">
+        <span className="component-row-label">{label}</span>
+        {meta && <span className="component-row-meta">{meta}</span>}
+      </span>
       {detail && <span className="component-row-detail">{detail}</span>}
     </button>
   );
@@ -102,16 +116,47 @@ function JointGroup({ type, joints }: { type: PoleJointType; joints: PoleJoint[]
   );
 }
 
-function SegmentGroup({ segments }: { segments: PoleSegment[] }) {
+function SegmentGroup({ segments, lengthUnit }: { segments: PoleSegment[]; lengthUnit: LengthUnit }) {
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>("g");
   if (segments.length === 0) return null;
+
   return (
     <div className="component-group">
       <h4>
-        Poles <span className="component-count">{segments.length}</span>
+        <span>
+          Poles <span className="component-count">{segments.length}</span>
+        </span>
+        <span className="weight-unit-toggle">
+          <button
+            className={weightUnit === "g" ? "unit-active" : ""}
+            onClick={() => setWeightUnit("g")}
+          >
+            g
+          </button>
+          <button
+            className={weightUnit === "oz" ? "unit-active" : ""}
+            onClick={() => setWeightUnit("oz")}
+          >
+            oz
+          </button>
+        </span>
       </h4>
       {segments.map((s) => (
-        <Row key={s.id} label={s.name} detail={s.shape} color={SEGMENT_COLOR} kind="segment" id={s.id} />
+        <Row
+          key={s.id}
+          label={s.name}
+          meta={`${formatLength(s.length, lengthUnit)} · ${formatWeight(estimatePoleWeightGrams(s), weightUnit)}`}
+          detail={s.shape}
+          color={SEGMENT_COLOR}
+          kind="segment"
+          id={s.id}
+        />
       ))}
+      <p className="hint pole-weight-hint">
+        Weight assumes hollow 6061-T6 aluminium tubing, {DEFAULT_POLE_WALL_THICKNESS_MM}mm wall,{" "}
+        {DEFAULT_POLE_DIAMETER_MM}mm diameter where a pole's own diameter isn't set — a labeled
+        estimate, not a spec.
+      </p>
     </div>
   );
 }
@@ -131,7 +176,7 @@ export function ComponentList() {
       {JOINT_TYPES.map((type) => (
         <JointGroup key={type} type={type} joints={design.poleJoints.filter((j) => j.type === type)} />
       ))}
-      <SegmentGroup segments={design.poleSegments} />
+      <SegmentGroup segments={design.poleSegments} lengthUnit={design.dimensions.unit} />
     </div>
   );
 }

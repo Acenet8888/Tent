@@ -1,5 +1,6 @@
 import { useTentStore } from "../../state/tentStore";
 import { useCameraStore, type CameraPreset } from "../../state/cameraStore";
+import { useCutPatternStore } from "../../state/cutPatternStore";
 
 const PRESETS: { id: CameraPreset; label: string }[] = [
   { id: "iso", label: "Isometric" },
@@ -13,6 +14,7 @@ export function ViewControls() {
   const setDisplayOption = useTentStore((s) => s.setDisplayOption);
   const recalculateFlyEnvelope = useTentStore((s) => s.recalculateFlyEnvelope);
   const requestPreset = useCameraStore((s) => s.requestPreset);
+  const openCutPattern = useCutPatternStore((s) => s.open);
 
   return (
     <div className="view-controls">
@@ -60,11 +62,14 @@ export function ViewControls() {
       </label>
 
       <h4>Fly fabric</h4>
-      <button onClick={recalculateFlyEnvelope}>Recalculate fly</button>
+      <div className="add-buttons">
+        <button onClick={recalculateFlyEnvelope}>Recalculate fly</button>
+        <button onClick={openCutPattern}>View cut pattern</button>
+      </div>
       <p className="hint">
-        Fits the fly to the outermost 3D envelope over every current pole (its convex hull),
-        instead of the live incremental drape. A one-off recompute — the next edit reverts to
-        the incremental drape until you click this again.
+        Recalculate fits the fly to the outermost 3D envelope over every current pole (its
+        convex hull), instead of the live incremental drape — a one-off recompute, reverted by
+        the next edit. Cut pattern flattens the current fly panels into 2D pieces for sewing.
       </p>
 
       <h4>Camera</h4>
