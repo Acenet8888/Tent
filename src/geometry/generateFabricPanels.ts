@@ -1,20 +1,21 @@
-import type { AnchorPoint, FabricPanel, Pole, Ridgeline, Seam, Vector3 } from "../types/tent";
+import type { AnchorPoint, FabricPanel, PoleJoint, Ridgeline, Seam, Vector3 } from "../types/tent";
 
 export type PointLookup = Map<string, Vector3>;
 
 /**
- * Builds a lookup from every point id (anchors and pole tips/bases) to its
- * 3D position, so panel/seam generation can resolve boundary ids without
- * caring whether a point comes from an anchor or a pole.
+ * Builds a lookup from every point id (anchors and pole joints) to its 3D
+ * position, so panel/seam generation can resolve boundary ids without
+ * caring whether a point comes from an anchor or a pole joint. Joints are
+ * addressable directly by their own id (unlike the old ground/tip pole
+ * pair, there's no synthetic suffix to reconstruct).
  */
-export function buildPointLookup(anchors: AnchorPoint[], poles: Pole[]): PointLookup {
+export function buildPointLookup(anchors: AnchorPoint[], joints: PoleJoint[]): PointLookup {
   const lookup: PointLookup = new Map();
   for (const anchor of anchors) {
     lookup.set(anchor.id, anchor.position);
   }
-  for (const pole of poles) {
-    lookup.set(`${pole.id}:ground`, pole.groundPosition);
-    lookup.set(`${pole.id}:tip`, pole.topPosition);
+  for (const joint of joints) {
+    lookup.set(joint.id, joint.position);
   }
   return lookup;
 }

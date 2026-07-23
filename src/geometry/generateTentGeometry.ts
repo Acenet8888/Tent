@@ -1,5 +1,14 @@
-import type { AnchorPoint, LengthUnit, Pole, Ridgeline, TentDesign } from "../types/tent";
-import { calculateDistance } from "./measurements";
+import type {
+  AnchorPoint,
+  LengthUnit,
+  PoleJoint,
+  PoleSegment,
+  PoleSegmentKind,
+  Ridgeline,
+  TentDesign,
+  Vector3,
+} from "../types/tent";
+import { calculateDistance, currentSegmentLength } from "./measurements";
 import { generateFabricPanels, deriveSeamsFromPanels, type PanelSpec } from "./generateFabricPanels";
 import { toMillimeters } from "../units/conversions";
 
@@ -18,11 +27,34 @@ export function createId(prefix: string): string {
   return `${prefix}-${idCounter}-${Date.now().toString(36)}`;
 }
 
+function makeJoint(name: string, type: PoleJoint["type"], position: Vector3): PoleJoint {
+  return { id: createId("joint"), name, type, position };
+}
+
+function makeStraightSegment(
+  name: string,
+  kind: PoleSegmentKind,
+  start: PoleJoint,
+  end: PoleJoint
+): PoleSegment {
+  return {
+    id: createId("segment"),
+    name,
+    kind,
+    shape: "straight",
+    startJointId: start.id,
+    endJointId: end.id,
+    length: calculateDistance(start.position, end.position),
+    lockedLength: false,
+  };
+}
+
 /**
  * Builds a default rectangular A-frame/ridge tent: four floor corners, a
- * single adjustable ridgeline, and one pole at each ridge end. All inputs
- * are converted to millimetres immediately so every downstream value is
- * unit-independent (see units/conversions.ts).
+ * single adjustable ridgeline, and one straight pole (ground joint → apex
+ * joint) at each ridge end. All inputs are converted to millimetres
+ * immediately so every downstream value is unit-independent (see
+ * units/conversions.ts).
  */
 export function generateDefaultTentDesign(input: TentDimensionsInput): TentDesign {
   const lengthMm = toMillimeters(input.length, input.unit);
@@ -64,57 +96,33 @@ export function generateDefaultTentDesign(input: TentDimensionsInput): TentDesig
     position: { x: -halfLength, y: groundClearanceMm, z: halfWidth },
   };
 
-  const poleLeft: Pole = {
-    id: createId("pole"),
-    name: "Left Ridge Pole",
-    groundPosition: { x: -halfLength, y: 0, z: 0 },
-    topPosition: { x: -halfLength, y: peakHeightMm, z: 0 },
-    length: calculateDistance(
-      { x: -halfLength, y: 0, z: 0 },
-      { x: -halfLength, y: peakHeightMm, z: 0 }
-    ),
-    type: "straight-pole",
-    lockedLength: false,
-  };
-  const poleRight: Pole = {
-    id: createId("pole"),
-    name: "Right Ridge Pole",
-    groundPosition: { x: halfLength, y: 0, z: 0 },
-    topPosition: { x: halfLength, y: peakHeightMm, z: 0 },
-    length: calculateDistance(
-      { x: halfLength, y: 0, z: 0 },
-      { x: halfLength, y: peakHeightMm, z: 0 }
-    ),
-    type: "straight-pole",
-    lockedLength: false,
-  };
+  const groundLeft = makeJoint("Left Pole Base", "ground", { x: -halfLength, y: 0, z: 0 });
+  const apexLeft = makeJoint("Left Ridge End", "apex", { x: -halfLength, y: peakHeightMm, z: 0 });
+  const groundRight = makeJoint("Right Pole Base", "ground", { x: halfLength, y: 0, z: 0 });
+  const apexRight = makeJoint("Right Ridge End", "apex", { x: halfLength, y: peakHeightMm, z: 0 });
 
-  // Ridge endpoints and panel corners at the ridge are the poles' tips
-  // (referenced via the `${poleId}:tip` convention from
-  // generateFabricPanels.buildPointLookup) rather than duplicate anchors,
-  // so dragging a pole tip can never desynchronize the ridgeline or roof
-  // panels from the pole itself.
-  const ridgeStartId = `${poleLeft.id}:tip`;
-  const ridgeEndId = `${poleRight.id}:tip`;
+  const poleLeft = makeStraightSegment("Left Ridge Pole", "straight-pole", groundLeft, apexLeft);
+  const poleRight = makeStraightSegment("Right Ridge Pole", "straight-pole", groundRight, apexRight);
 
   const anchors = [cornerA, cornerB, cornerC, cornerD];
-  const poles = [poleLeft, poleRight];
+  const poleJoints = [groundLeft, apexLeft, groundRight, apexRight];
+  const poleSegments = [poleLeft, poleRight];
 
   const ridgelines: Ridgeline[] = [
     {
       id: createId("ridgeline"),
-      startPointId: ridgeStartId,
-      endPointId: ridgeEndId,
+      startPointId: apexLeft.id,
+      endPointId: apexRight.id,
     },
   ];
 
   let panelSpecs: PanelSpec[];
 
   if (wallHeightMm && wallHeightMm > 0) {
-    const wallTopA = { id: createId("anchor"), name: "Wall Top (Front-Left)", type: "corner" as const, locked: false, position: { x: -halfLength, y: wallHeightMm, z: -halfWidth } };
-    const wallTopB = { id: createId("anchor"), name: "Wall Top (Front-Right)", type: "corner" as const, locked: false, position: { x: halfLength, y: wallHeightMm, z: -halfWidth } };
-    const wallTopC = { id: createId("anchor"), name: "Wall Top (Back-Right)", type: "corner" as const, locked: false, position: { x: halfLength, y: wallHeightMm, z: halfWidth } };
-    const wallTopD = { id: createId("anchor"), name: "Wall Top (Back-Left)", type: "corner" as const, locked: false, position: { x: -halfLength, y: wallHeightMm, z: halfWidth } };
+    const wallTopA: AnchorPoint = { id: createId("anchor"), name: "Eave (Front-Left)", type: "eave", locked: false, position: { x: -halfLength, y: wallHeightMm, z: -halfWidth } };
+    const wallTopB: AnchorPoint = { id: createId("anchor"), name: "Eave (Front-Right)", type: "eave", locked: false, position: { x: halfLength, y: wallHeightMm, z: -halfWidth } };
+    const wallTopC: AnchorPoint = { id: createId("anchor"), name: "Eave (Back-Right)", type: "eave", locked: false, position: { x: halfLength, y: wallHeightMm, z: halfWidth } };
+    const wallTopD: AnchorPoint = { id: createId("anchor"), name: "Eave (Back-Left)", type: "eave", locked: false, position: { x: -halfLength, y: wallHeightMm, z: halfWidth } };
     anchors.push(wallTopA, wallTopB, wallTopC, wallTopD);
 
     panelSpecs = [
@@ -123,18 +131,18 @@ export function generateDefaultTentDesign(input: TentDimensionsInput): TentDesig
       { name: "Right End Wall", boundaryPointIds: [cornerB.id, cornerC.id, wallTopC.id, wallTopB.id] },
       { name: "Back Wall", boundaryPointIds: [cornerC.id, cornerD.id, wallTopD.id, wallTopC.id] },
       { name: "Left End Wall", boundaryPointIds: [cornerD.id, cornerA.id, wallTopA.id, wallTopD.id] },
-      { name: "Front Roof Slope", boundaryPointIds: [wallTopA.id, wallTopB.id, ridgeEndId, ridgeStartId] },
-      { name: "Back Roof Slope", boundaryPointIds: [wallTopD.id, wallTopC.id, ridgeEndId, ridgeStartId] },
-      { name: "Left Gable", boundaryPointIds: [wallTopA.id, wallTopD.id, ridgeStartId] },
-      { name: "Right Gable", boundaryPointIds: [wallTopB.id, wallTopC.id, ridgeEndId] },
+      { name: "Front Roof Slope", boundaryPointIds: [wallTopA.id, wallTopB.id, apexRight.id, apexLeft.id] },
+      { name: "Back Roof Slope", boundaryPointIds: [wallTopD.id, wallTopC.id, apexRight.id, apexLeft.id] },
+      { name: "Left Gable", boundaryPointIds: [wallTopA.id, wallTopD.id, apexLeft.id] },
+      { name: "Right Gable", boundaryPointIds: [wallTopB.id, wallTopC.id, apexRight.id] },
     ];
   } else {
     panelSpecs = [
       { name: "Floor", boundaryPointIds: [cornerA.id, cornerB.id, cornerC.id, cornerD.id] },
-      { name: "Front Roof Slope", boundaryPointIds: [cornerA.id, cornerB.id, ridgeEndId, ridgeStartId] },
-      { name: "Back Roof Slope", boundaryPointIds: [cornerD.id, cornerC.id, ridgeEndId, ridgeStartId] },
-      { name: "Left Gable", boundaryPointIds: [cornerA.id, cornerD.id, ridgeStartId] },
-      { name: "Right Gable", boundaryPointIds: [cornerB.id, cornerC.id, ridgeEndId] },
+      { name: "Front Roof Slope", boundaryPointIds: [cornerA.id, cornerB.id, apexRight.id, apexLeft.id] },
+      { name: "Back Roof Slope", boundaryPointIds: [cornerD.id, cornerC.id, apexRight.id, apexLeft.id] },
+      { name: "Left Gable", boundaryPointIds: [cornerA.id, cornerD.id, apexLeft.id] },
+      { name: "Right Gable", boundaryPointIds: [cornerB.id, cornerC.id, apexRight.id] },
     ];
   }
 
@@ -151,7 +159,8 @@ export function generateDefaultTentDesign(input: TentDimensionsInput): TentDesig
       groundClearance: groundClearanceMm,
       unit: input.unit,
     },
-    poles,
+    poleJoints,
+    poleSegments,
     anchors,
     ridgelines,
     seams,
@@ -199,7 +208,7 @@ export function rescaleTentDesign(
   const scaleZ = current.width > 0 ? nextWidthMm / current.width : 1;
   const scaleY = current.peakHeight > 0 ? nextPeakHeightMm / current.peakHeight : 1;
 
-  const rescalePoint = (p: { x: number; y: number; z: number }) => ({
+  const rescalePoint = (p: Vector3): Vector3 => ({
     x: p.x * scaleX,
     y: p.y * scaleY,
     z: p.z * scaleZ,
@@ -210,16 +219,16 @@ export function rescaleTentDesign(
     position: rescalePoint(anchor.position),
   }));
 
-  const poles = design.poles.map((pole) => {
-    const groundPosition = rescalePoint(pole.groundPosition);
-    const topPosition = rescalePoint(pole.topPosition);
-    return {
-      ...pole,
-      groundPosition,
-      topPosition,
-      length: calculateDistance(groundPosition, topPosition),
-    };
-  });
+  const poleJoints = design.poleJoints.map((joint) => ({
+    ...joint,
+    position: rescalePoint(joint.position),
+  }));
+
+  const jointLookup = new Map(poleJoints.map((j) => [j.id, j.position]));
+  const poleSegments = design.poleSegments.map((segment) => ({
+    ...segment,
+    length: currentSegmentLength(segment, jointLookup) ?? segment.length,
+  }));
 
   return {
     ...design,
@@ -232,7 +241,8 @@ export function rescaleTentDesign(
       unit,
     },
     anchors,
-    poles,
+    poleJoints,
+    poleSegments,
   };
 }
 
@@ -244,4 +254,78 @@ export function createDefaultTentDesign(): TentDesign {
     groundClearance: 0,
     unit: "mm",
   });
+}
+
+export type PoleTemplateResult = { joints: PoleJoint[]; segments: PoleSegment[] };
+
+/** A single straight ground-to-tip pole (the common case: trekking pole, straight pole, support pole). */
+export function createStraightPoleTemplate(
+  groundPosition: Vector3,
+  apexPosition: Vector3,
+  kind: PoleSegmentKind = "straight-pole"
+): PoleTemplateResult {
+  const ground = makeJoint("Pole Base", "ground", groundPosition);
+  const apex = makeJoint("Pole Tip", "apex", apexPosition);
+  const segment = makeStraightSegment("Pole", kind, ground, apex);
+  return { joints: [ground, apex], segments: [segment] };
+}
+
+/** A hoop pole: ground → arc through peak → ground, as one continuously-curved segment. */
+export function createHoopPoleTemplate(
+  groundA: Vector3,
+  apexPosition: Vector3,
+  groundB: Vector3
+): PoleTemplateResult {
+  const jointA = makeJoint("Hoop Base A", "ground", groundA);
+  const apex = makeJoint("Hoop Peak", "apex", apexPosition);
+  const jointB = makeJoint("Hoop Base B", "ground", groundB);
+
+  const segment: PoleSegment = {
+    id: createId("segment"),
+    name: "Hoop Pole",
+    kind: "hoop-pole",
+    shape: "arc",
+    startJointId: jointA.id,
+    endJointId: jointB.id,
+    archJointId: apex.id,
+    length: currentSegmentLength(
+      { startJointId: jointA.id, endJointId: jointB.id, archJointId: apex.id, shape: "arc" } as PoleSegment,
+      new Map([
+        [jointA.id, jointA.position],
+        [jointB.id, jointB.position],
+        [apex.id, apex.position],
+      ])
+    ) ?? calculateDistance(groundA, groundB),
+    lockedLength: false,
+  };
+
+  return { joints: [jointA, apex, jointB], segments: [segment] };
+}
+
+/**
+ * A hubbed pole set: two hubs joined by a spreader, each hub splitting into
+ * two legs down to the ground — "one pole with a hub on each end reaching
+ * the ground in four places."
+ */
+export function createHubPoleSetTemplate(
+  hubAPosition: Vector3,
+  hubBPosition: Vector3,
+  legGroundPositions: [Vector3, Vector3, Vector3, Vector3]
+): PoleTemplateResult {
+  const hubA = makeJoint("Hub A", "hub", hubAPosition);
+  const hubB = makeJoint("Hub B", "hub", hubBPosition);
+  const legJoints = legGroundPositions.map((pos, i) => makeJoint(`Hub Leg ${i + 1}`, "ground", pos));
+
+  const spreader = makeStraightSegment("Hub Spreader", "spreader-pole", hubA, hubB);
+  const legs = [
+    makeStraightSegment("Hub A Leg 1", "support-pole", hubA, legJoints[0]),
+    makeStraightSegment("Hub A Leg 2", "support-pole", hubA, legJoints[1]),
+    makeStraightSegment("Hub B Leg 1", "support-pole", hubB, legJoints[2]),
+    makeStraightSegment("Hub B Leg 2", "support-pole", hubB, legJoints[3]),
+  ];
+
+  return {
+    joints: [hubA, hubB, ...legJoints],
+    segments: [spreader, ...legs],
+  };
 }

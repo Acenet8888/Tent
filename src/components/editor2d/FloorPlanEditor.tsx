@@ -5,7 +5,8 @@ import { buildPointLookup, resolvePanelBoundary } from "../../geometry/generateF
 import { calculateDistance } from "../../geometry/measurements";
 import { MeasurementGrid } from "./MeasurementGrid";
 import { DimensionLine } from "./DimensionLine";
-import { PoleHandle } from "./PoleHandle";
+import { PoleJointHandle } from "./PoleJointHandle";
+import { PoleSegmentLine } from "./PoleSegmentLine";
 import { AnchorHandle } from "./AnchorHandle";
 import { planToScreen, type PlanTransform } from "./transform";
 
@@ -16,8 +17,6 @@ const MAX_SCALE = 2;
 export function FloorPlanEditor() {
   const design = useTentStore((s) => s.design);
   const moveAnchor = useTentStore((s) => s.moveAnchor);
-  const updatePoleGroundPosition = useTentStore((s) => s.updatePoleGroundPosition);
-  const updatePoleTipPosition = useTentStore((s) => s.updatePoleTipPosition);
   const clearSelection = useSelectionStore((s) => s.clear);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -117,7 +116,10 @@ export function FloorPlanEditor() {
     event.currentTarget.releasePointerCapture(event.pointerId);
   }, []);
 
-  const lookup = useMemo(() => buildPointLookup(design.anchors, design.poles), [design.anchors, design.poles]);
+  const lookup = useMemo(
+    () => buildPointLookup(design.anchors, design.poleJoints),
+    [design.anchors, design.poleJoints]
+  );
 
   const panelOutlines = useMemo(
     () =>
@@ -243,23 +245,18 @@ export function FloorPlanEditor() {
         ))}
 
         {design.display.showPoles &&
-          design.poles.map((pole) => (
-            <PoleHandle
-              key={pole.id}
-              pole={pole}
+          design.poleSegments.map((segment) => (
+            <PoleSegmentLine key={segment.id} segment={segment} jointLookup={lookup} transform={transform} />
+          ))}
+
+        {design.display.showPoles &&
+          design.poleJoints.map((joint) => (
+            <PoleJointHandle
+              key={joint.id}
+              joint={joint}
               transform={transform}
               snapEnabled={snapEnabled}
               gridMm={gridMm}
-              onMoveGround={(id, x, z, skipHistory) => {
-                const current = design.poles.find((p) => p.id === id);
-                if (!current) return;
-                updatePoleGroundPosition(id, { x, y: current.groundPosition.y, z }, { skipHistory });
-              }}
-              onMoveTip={(id, x, z, skipHistory) => {
-                const current = design.poles.find((p) => p.id === id);
-                if (!current) return;
-                updatePoleTipPosition(id, { x, y: current.topPosition.y, z }, { skipHistory });
-              }}
             />
           ))}
       </svg>

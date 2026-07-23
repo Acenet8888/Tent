@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type SelectionKind = "anchor" | "pole-ground" | "pole-tip";
+export type SelectionKind = "anchor" | "joint" | "segment";
 
 export type Selection = {
   kind: SelectionKind;

@@ -8,8 +8,7 @@ const ANCHOR_COLORS: Record<AnchorPoint["type"], string> = {
   corner: "#3b6ef0",
   stake: "#2e9e5b",
   "tie-out": "#c77b17",
-  "pole-tip": "#e0455b",
-  "ridge-end": "#7a4fd6",
+  eave: "#7a4fd6",
 };
 
 type AnchorHandleProps = {

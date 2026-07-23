@@ -1,14 +1,58 @@
 import { create } from "zustand";
-import type { AnchorPoint, AnchorType, LengthUnit, Pole, TentDesign, Vector3 } from "../types/tent";
+import type {
+  AnchorPoint,
+  AnchorType,
+  LengthUnit,
+  PoleJoint,
+  PoleJointType,
+  PoleSegmentKind,
+  TentDesign,
+  Vector3,
+} from "../types/tent";
 import {
   createDefaultTentDesign,
+  createHoopPoleTemplate,
+  createHubPoleSetTemplate,
   createId,
+  createStraightPoleTemplate,
   generateDefaultTentDesign,
   rescaleTentDesign,
   type TentDimensionsInput,
 } from "../geometry/generateTentGeometry";
-import { reconcilePole, reconcilePoleForGroundMove } from "../geometry/measurements";
+import { reconcileJointMove, subtract, scale, add, calculateDistance } from "../geometry/measurements";
 import { useHistoryStore } from "./historyStore";
+
+type Dimensions = TentDesign["dimensions"];
+
+/** Keeps the Length/Width/Ground clearance fields live-accurate to the actual floor corners, so dragging a corner in the 2D view updates the dimension inputs immediately instead of leaving them stale. */
+function syncDimensionsFromCorners(anchors: AnchorPoint[], dimensions: Dimensions): Dimensions {
+  const corners = anchors.filter((a) => a.type === "corner");
+  if (corners.length === 0) return dimensions;
+  const xs = corners.map((c) => c.position.x);
+  const zs = corners.map((c) => c.position.z);
+  const ys = corners.map((c) => c.position.y);
+  return {
+    ...dimensions,
+    length: Math.max(...xs) - Math.min(...xs),
+    width: Math.max(...zs) - Math.min(...zs),
+    groundClearance: ys.reduce((sum, y) => sum + y, 0) / ys.length,
+  };
+}
+
+/** Same idea for the eave (wall-top) line: keeps Wall height in sync as those points are dragged. */
+function syncWallHeightFromEaves(anchors: AnchorPoint[], dimensions: Dimensions): Dimensions {
+  const eaves = anchors.filter((a) => a.type === "eave");
+  if (eaves.length === 0) return dimensions;
+  const avgY = eaves.reduce((sum, a) => sum + a.position.y, 0) / eaves.length;
+  return { ...dimensions, wallHeight: avgY };
+}
+
+/** Same idea for Peak height: keeps it in sync with the tallest apex joint as poles are dragged. */
+function syncPeakHeightFromApexJoints(joints: PoleJoint[], dimensions: Dimensions): Dimensions {
+  const apexes = joints.filter((j) => j.type === "apex");
+  if (apexes.length === 0) return dimensions;
+  return { ...dimensions, peakHeight: Math.max(...apexes.map((j) => j.position.y)) };
+}
 
 type TentState = {
   design: TentDesign;
@@ -36,16 +80,26 @@ type TentState = {
    */
   beginInteraction: () => void;
 
-  updatePoleGroundPosition: (poleId: string, positionMm: Vector3, opts?: { skipHistory?: boolean }) => void;
-  updatePoleTipPosition: (poleId: string, positionMm: Vector3, opts?: { skipHistory?: boolean }) => void;
-  toggleLockedLength: (poleId: string) => void;
-  setPoleLength: (poleId: string, lengthMm: number) => void;
-  addPole: (groundPosition: Vector3, topPosition: Vector3) => void;
-  removePole: (poleId: string) => void;
-
   addAnchor: (type: AnchorType, position: Vector3, name?: string) => void;
   moveAnchor: (anchorId: string, position: Vector3, opts?: { skipHistory?: boolean }) => void;
   removeAnchor: (anchorId: string) => void;
+
+  addJoint: (type: PoleJointType, position: Vector3, name?: string) => void;
+  moveJoint: (jointId: string, position: Vector3, opts?: { skipHistory?: boolean }) => void;
+  removeJoint: (jointId: string) => void;
+
+  addSegment: (startJointId: string, endJointId: string, kind: PoleSegmentKind) => void;
+  removeSegment: (segmentId: string) => void;
+  toggleSegmentLockedLength: (segmentId: string) => void;
+  setSegmentLength: (segmentId: string, lengthMm: number) => void;
+
+  addStraightPoleTemplate: (groundPosition: Vector3, apexPosition: Vector3, kind?: PoleSegmentKind) => void;
+  addHoopPoleTemplate: (groundA: Vector3, apex: Vector3, groundB: Vector3) => void;
+  addHubPoleSetTemplate: (
+    hubA: Vector3,
+    hubB: Vector3,
+    legGroundPositions: [Vector3, Vector3, Vector3, Vector3]
+  ) => void;
 
   setDisplayOption: (partial: Partial<TentDesign["display"]>) => void;
 
@@ -88,87 +142,6 @@ export const useTentStore = create<TentState>((set, get) => ({
     useHistoryStore.getState().record(get().design);
   },
 
-  updatePoleGroundPosition: (poleId, positionMm, opts) => {
-    const design = withHistory(
-      get,
-      (current) => ({
-        ...current,
-        poles: current.poles.map((pole) =>
-          pole.id === poleId ? reconcilePoleForGroundMove(pole, positionMm) : pole
-        ),
-      }),
-      opts?.skipHistory
-    );
-    set({ design });
-  },
-
-  updatePoleTipPosition: (poleId, positionMm, opts) => {
-    const design = withHistory(
-      get,
-      (current) => ({
-        ...current,
-        poles: current.poles.map((pole) =>
-          pole.id === poleId ? reconcilePole(pole, positionMm) : pole
-        ),
-      }),
-      opts?.skipHistory
-    );
-    set({ design });
-  },
-
-  toggleLockedLength: (poleId) => {
-    const design = withHistory(get, (current) => ({
-      ...current,
-      poles: current.poles.map((pole) =>
-        pole.id === poleId ? { ...pole, lockedLength: !pole.lockedLength } : pole
-      ),
-    }));
-    set({ design });
-  },
-
-  setPoleLength: (poleId, lengthMm) => {
-    const design = withHistory(get, (current) => ({
-      ...current,
-      poles: current.poles.map((pole) => {
-        if (pole.id !== poleId) return pole;
-        const locked = { ...pole, length: lengthMm, lockedLength: true };
-        return reconcilePole(locked, pole.topPosition);
-      }),
-    }));
-    set({ design });
-  },
-
-  addPole: (groundPosition, topPosition) => {
-    const design = withHistory(get, (current) => {
-      const newPole: Pole = {
-        id: createId("pole"),
-        name: `Pole ${current.poles.length + 1}`,
-        groundPosition,
-        topPosition,
-        length: Math.hypot(
-          topPosition.x - groundPosition.x,
-          topPosition.y - groundPosition.y,
-          topPosition.z - groundPosition.z
-        ),
-        type: "support-pole",
-        lockedLength: false,
-      };
-      return { ...current, poles: [...current.poles, newPole] };
-    });
-    set({ design });
-  },
-
-  removePole: (poleId) => {
-    const design = withHistory(get, (current) => ({
-      ...current,
-      poles: current.poles.filter((p) => p.id !== poleId),
-      ridgelines: current.ridgelines.filter(
-        (r) => r.startPointId !== poleId && r.endPointId !== poleId
-      ),
-    }));
-    set({ design });
-  },
-
   addAnchor: (type, position, name) => {
     const design = withHistory(get, (current) => {
       const newAnchor: AnchorPoint = {
@@ -186,10 +159,14 @@ export const useTentStore = create<TentState>((set, get) => ({
   moveAnchor: (anchorId, position, opts) => {
     const design = withHistory(
       get,
-      (current) => ({
-        ...current,
-        anchors: current.anchors.map((a) => (a.id === anchorId ? { ...a, position } : a)),
-      }),
+      (current) => {
+        const anchors = current.anchors.map((a) => (a.id === anchorId ? { ...a, position } : a));
+        const moved = anchors.find((a) => a.id === anchorId);
+        let dimensions = current.dimensions;
+        if (moved?.type === "corner") dimensions = syncDimensionsFromCorners(anchors, dimensions);
+        else if (moved?.type === "eave") dimensions = syncWallHeightFromEaves(anchors, dimensions);
+        return { ...current, anchors, dimensions };
+      },
       opts?.skipHistory
     );
     set({ design });
@@ -203,6 +180,145 @@ export const useTentStore = create<TentState>((set, get) => ({
         (panel) => !panel.boundaryPointIds.includes(anchorId)
       ),
     }));
+    set({ design });
+  },
+
+  addJoint: (type, position, name) => {
+    const design = withHistory(get, (current) => {
+      const newJoint: PoleJoint = {
+        id: createId("joint"),
+        name: name ?? `${type} ${current.poleJoints.filter((j) => j.type === type).length + 1}`,
+        type,
+        position,
+      };
+      return { ...current, poleJoints: [...current.poleJoints, newJoint] };
+    });
+    set({ design });
+  },
+
+  moveJoint: (jointId, position, opts) => {
+    const design = withHistory(
+      get,
+      (current) => {
+        const { joints, segments } = reconcileJointMove(current.poleJoints, current.poleSegments, jointId, position);
+        const moved = joints.find((j) => j.id === jointId);
+        const dimensions =
+          moved?.type === "apex" ? syncPeakHeightFromApexJoints(joints, current.dimensions) : current.dimensions;
+        return { ...current, poleJoints: joints, poleSegments: segments, dimensions };
+      },
+      opts?.skipHistory
+    );
+    set({ design });
+  },
+
+  removeJoint: (jointId) => {
+    const design = withHistory(get, (current) => ({
+      ...current,
+      poleJoints: current.poleJoints.filter((j) => j.id !== jointId),
+      poleSegments: current.poleSegments.filter(
+        (s) => s.startJointId !== jointId && s.endJointId !== jointId && s.archJointId !== jointId
+      ),
+      ridgelines: current.ridgelines.filter(
+        (r) => r.startPointId !== jointId && r.endPointId !== jointId
+      ),
+      fabricPanels: current.fabricPanels.filter((panel) => !panel.boundaryPointIds.includes(jointId)),
+    }));
+    set({ design });
+  },
+
+  addSegment: (startJointId, endJointId, kind) => {
+    const design = withHistory(get, (current) => {
+      const lookup = new Map(current.poleJoints.map((j) => [j.id, j.position]));
+      const start = lookup.get(startJointId);
+      const end = lookup.get(endJointId);
+      const length = start && end ? calculateDistance(start, end) : 0;
+      const newSegment = {
+        id: createId("segment"),
+        name: `${kind} ${current.poleSegments.length + 1}`,
+        kind,
+        shape: "straight" as const,
+        startJointId,
+        endJointId,
+        length,
+        lockedLength: false,
+      };
+      return { ...current, poleSegments: [...current.poleSegments, newSegment] };
+    });
+    set({ design });
+  },
+
+  removeSegment: (segmentId) => {
+    const design = withHistory(get, (current) => ({
+      ...current,
+      poleSegments: current.poleSegments.filter((s) => s.id !== segmentId),
+    }));
+    set({ design });
+  },
+
+  toggleSegmentLockedLength: (segmentId) => {
+    const design = withHistory(get, (current) => ({
+      ...current,
+      poleSegments: current.poleSegments.map((s) =>
+        s.id === segmentId ? { ...s, lockedLength: !s.lockedLength } : s
+      ),
+    }));
+    set({ design });
+  },
+
+  setSegmentLength: (segmentId, lengthMm) => {
+    const design = withHistory(get, (current) => {
+      const jointMap = new Map(current.poleJoints.map((j) => [j.id, { ...j }]));
+      const poleSegments = current.poleSegments.map((segment) => {
+        if (segment.id !== segmentId || segment.shape !== "straight") return segment;
+        const start = jointMap.get(segment.startJointId);
+        const end = jointMap.get(segment.endJointId);
+        if (start && end) {
+          const distance = calculateDistance(start.position, end.position);
+          if (distance > 1e-9) {
+            const direction = subtract(end.position, start.position);
+            jointMap.set(end.id, { ...end, position: add(start.position, scale(direction, lengthMm / distance)) });
+          }
+        }
+        return { ...segment, length: lengthMm, lockedLength: true };
+      });
+      return { ...current, poleJoints: Array.from(jointMap.values()), poleSegments };
+    });
+    set({ design });
+  },
+
+  addStraightPoleTemplate: (groundPosition, apexPosition, kind = "straight-pole") => {
+    const design = withHistory(get, (current) => {
+      const { joints, segments } = createStraightPoleTemplate(groundPosition, apexPosition, kind);
+      return {
+        ...current,
+        poleJoints: [...current.poleJoints, ...joints],
+        poleSegments: [...current.poleSegments, ...segments],
+      };
+    });
+    set({ design });
+  },
+
+  addHoopPoleTemplate: (groundA, apex, groundB) => {
+    const design = withHistory(get, (current) => {
+      const { joints, segments } = createHoopPoleTemplate(groundA, apex, groundB);
+      return {
+        ...current,
+        poleJoints: [...current.poleJoints, ...joints],
+        poleSegments: [...current.poleSegments, ...segments],
+      };
+    });
+    set({ design });
+  },
+
+  addHubPoleSetTemplate: (hubA, hubB, legGroundPositions) => {
+    const design = withHistory(get, (current) => {
+      const { joints, segments } = createHubPoleSetTemplate(hubA, hubB, legGroundPositions);
+      return {
+        ...current,
+        poleJoints: [...current.poleJoints, ...joints],
+        poleSegments: [...current.poleSegments, ...segments],
+      };
+    });
     set({ design });
   },
 

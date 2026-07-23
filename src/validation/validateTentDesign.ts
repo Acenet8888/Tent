@@ -1,5 +1,5 @@
 import type { TentDesign, Vector3 } from "../types/tent";
-import { calculateDistance } from "../geometry/measurements";
+import { calculateDistance, currentSegmentLength } from "../geometry/measurements";
 import { buildPointLookup, resolvePoint } from "../geometry/generateFabricPanels";
 
 export type ValidationSeverity = "error" | "warning";
@@ -20,7 +20,7 @@ export function validateTentDesign(design: TentDesign): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
   issues.push(...validateDimensionLimits(design));
-  issues.push(...validatePoleLengths(design));
+  issues.push(...validateSegmentLengths(design));
   issues.push(...validateDuplicatePoints(design));
   issues.push(...validateSelfIntersectingPanels(design));
 
@@ -59,28 +59,41 @@ function validateDimensionLimits(design: TentDesign): ValidationIssue[] {
   return issues;
 }
 
-function validatePoleLengths(design: TentDesign): ValidationIssue[] {
+function validateSegmentLengths(design: TentDesign): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
+  const jointLookup = new Map(design.poleJoints.map((j) => [j.id, j.position]));
 
-  for (const pole of design.poles) {
-    const actualDistance = calculateDistance(pole.groundPosition, pole.topPosition);
-    const discrepancy = Math.abs(actualDistance - pole.length);
-
-    if (pole.lockedLength && discrepancy > POLE_LENGTH_EPSILON_MM) {
+  for (const segment of design.poleSegments) {
+    const actualDistance = currentSegmentLength(segment, jointLookup);
+    if (actualDistance === undefined) {
       issues.push({
-        id: `pole-length-mismatch-${pole.id}`,
+        id: `segment-missing-joint-${segment.id}`,
         severity: "error",
-        message: `${pole.name}'s locked length (${pole.length.toFixed(1)}mm) does not match its actual span (${actualDistance.toFixed(1)}mm).`,
-        relatedIds: [pole.id],
+        message: `${segment.name} references a joint that no longer exists.`,
+        relatedIds: [segment.id],
+      });
+      continue;
+    }
+
+    const discrepancy = Math.abs(actualDistance - segment.length);
+    // Arc segments never enforce a locked length (see PoleSegment.lockedLength),
+    // so a mismatch there just means the stored value hasn't been refreshed
+    // rather than a real inconsistency worth flagging.
+    if (segment.shape === "straight" && segment.lockedLength && discrepancy > POLE_LENGTH_EPSILON_MM) {
+      issues.push({
+        id: `segment-length-mismatch-${segment.id}`,
+        severity: "error",
+        message: `${segment.name}'s locked length (${segment.length.toFixed(1)}mm) does not match its actual span (${actualDistance.toFixed(1)}mm).`,
+        relatedIds: [segment.id],
       });
     }
 
     if (actualDistance < 1) {
       issues.push({
-        id: `pole-zero-length-${pole.id}`,
+        id: `segment-zero-length-${segment.id}`,
         severity: "error",
-        message: `${pole.name} has zero length: its ground position and tip coincide.`,
-        relatedIds: [pole.id],
+        message: `${segment.name} has zero length: its endpoints coincide.`,
+        relatedIds: [segment.id],
       });
     }
   }
@@ -92,8 +105,7 @@ function validateDuplicatePoints(design: TentDesign): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const points: { id: string; name: string; position: Vector3 }[] = [
     ...design.anchors.map((a) => ({ id: a.id, name: a.name, position: a.position })),
-    ...design.poles.map((p) => ({ id: `${p.id}:ground`, name: `${p.name} (base)`, position: p.groundPosition })),
-    ...design.poles.map((p) => ({ id: `${p.id}:tip`, name: `${p.name} (tip)`, position: p.topPosition })),
+    ...design.poleJoints.map((j) => ({ id: j.id, name: j.name, position: j.position })),
   ];
 
   for (let i = 0; i < points.length; i++) {
@@ -115,7 +127,7 @@ function validateDuplicatePoints(design: TentDesign): ValidationIssue[] {
 
 function validateSelfIntersectingPanels(design: TentDesign): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const lookup = buildPointLookup(design.anchors, design.poles);
+  const lookup = buildPointLookup(design.anchors, design.poleJoints);
 
   for (const panel of design.fabricPanels) {
     const points = panel.boundaryPointIds

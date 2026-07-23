@@ -4,7 +4,8 @@ import { Grid } from "@react-three/drei";
 import { useTentStore } from "../../state/tentStore";
 import { buildPointLookup, resolvePanelBoundary, resolveRidgeline } from "../../geometry/generateFabricPanels";
 import { CameraControls } from "./CameraControls";
-import { PoleMesh } from "./PoleMesh";
+import { PoleJointMesh } from "./PoleJointMesh";
+import { PoleSegmentMesh } from "./PoleSegmentMesh";
 import { RidgelineMesh } from "./RidgelineMesh";
 import { FabricMesh } from "./FabricMesh";
 import { mmToScene } from "./sceneUnits";
@@ -12,7 +13,10 @@ import { mmToScene } from "./sceneUnits";
 export function TentScene() {
   const design = useTentStore((s) => s.design);
 
-  const lookup = useMemo(() => buildPointLookup(design.anchors, design.poles), [design.anchors, design.poles]);
+  const lookup = useMemo(
+    () => buildPointLookup(design.anchors, design.poleJoints),
+    [design.anchors, design.poleJoints]
+  );
 
   const gridSize = Math.max(mmToScene(design.dimensions.length), mmToScene(design.dimensions.width)) * 3 + 4;
 
@@ -35,7 +39,12 @@ export function TentScene() {
       )}
 
       {design.display.showPoles &&
-        design.poles.map((pole) => <PoleMesh key={pole.id} pole={pole} />)}
+        design.poleSegments.map((segment) => (
+          <PoleSegmentMesh key={segment.id} segment={segment} jointLookup={lookup} />
+        ))}
+
+      {design.display.showPoles &&
+        design.poleJoints.map((joint) => <PoleJointMesh key={joint.id} joint={joint} />)}
 
       {design.ridgelines.map((ridgeline) => {
         const resolved = resolveRidgeline(lookup, ridgeline);

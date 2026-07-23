@@ -18,7 +18,8 @@ export type TentDesign = {
     unit: LengthUnit;
   };
 
-  poles: Pole[];
+  poleJoints: PoleJoint[];
+  poleSegments: PoleSegment[];
   anchors: AnchorPoint[];
   ridgelines: Ridgeline[];
   seams: Seam[];
@@ -33,24 +34,64 @@ export type TentDesign = {
   };
 };
 
-export type PoleType = "trekking-pole" | "straight-pole" | "support-pole";
+/**
+ * A pole system is a graph: joints are the connection points (where a pole
+ * meets the ground, where two or more pole pieces meet at a hub, or the
+ * free-floating peak a hoop pole bows through), and PoleSegments are the
+ * physical pole material joining two joints. This lets a "pole" be a plain
+ * ground-to-tip strut, a spreader between two other points, or an
+ * arbitrarily branching hub tree, all with the same two primitives.
+ */
+export type PoleJointType =
+  | "ground" // touches the ground; conceptually like an anchor but owned by the pole system
+  | "hub" // a junction where two or more segments meet, floating above the ground
+  | "apex"; // a high point: a ridge/tip end, or the peak a hoop's arc bows through
 
-export type Pole = {
+export type PoleJoint = {
   id: string;
   name: string;
+  type: PoleJointType;
+  position: Vector3;
+};
 
-  groundPosition: Vector3;
-  topPosition: Vector3;
+export type PoleSegmentShape = "straight" | "arc";
+
+export type PoleSegmentKind =
+  | "trekking-pole"
+  | "straight-pole"
+  | "support-pole"
+  | "hoop-pole"
+  | "spreader-pole";
+
+export type PoleSegment = {
+  id: string;
+  name: string;
+  kind: PoleSegmentKind;
+  shape: PoleSegmentShape;
+
+  startJointId: string;
+  endJointId: string;
+  /**
+   * Required when shape is "arc": the id of the (usually "apex") joint the
+   * curve bows through, so the segment reads as ground → peak → ground
+   * rather than two straight pieces meeting at a sharp angle.
+   */
+  archJointId?: string;
 
   length: number;
   diameter?: number;
 
-  type: PoleType;
-
+  /**
+   * Only meaningful for "straight" segments: dragging one joint keeps the
+   * other exactly `length` away (see geometry/measurements.ts:reconcileJointMove).
+   * Arc segments always recompute their length live instead of enforcing
+   * it, since preserving arc length while repositioning an endpoint or the
+   * peak is an inverse elastica problem outside this MVP's scope.
+   */
   lockedLength: boolean;
 };
 
-export type AnchorType = "corner" | "stake" | "tie-out" | "pole-tip" | "ridge-end";
+export type AnchorType = "corner" | "stake" | "tie-out" | "eave";
 
 export type AnchorPoint = {
   id: string;
@@ -82,8 +123,8 @@ export type FabricPanel = {
 };
 
 /**
- * Any point in the design that geometry can reference by id: an anchor,
- * a pole's ground contact, or a pole's tip. Panels/ridgelines/seams store
- * ids so moving the underlying pole/anchor keeps every dependent shape in sync.
+ * Any point in the design that geometry can reference by id: an anchor or
+ * a pole joint. Panels/ridgelines/seams store ids so moving the underlying
+ * anchor/joint keeps every dependent shape in sync.
  */
 export type ResolvablePointId = string;
